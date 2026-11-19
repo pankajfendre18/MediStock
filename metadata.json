@@ -1,0 +1,6 @@
+{
+  "name": "MediStock AI",
+  "description": "AI-powered pharmacy inventory management and distributor GST bill scanner built for Indian medical stores.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
