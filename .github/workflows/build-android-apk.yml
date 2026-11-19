@@ -22,61 +22,73 @@ jobs:
           node-version: '22'
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '21'
 
       - name: Install dependencies & build web bundle
         run: |
-          npm install
+          npm install --legacy-peer-deps
           npm run build
 
       - name: Configure Capacitor Android project
         env:
           DEPLOYED_URL: ${{ github.event.inputs.deployed_url }}
         run: |
-          if [ -n "$DEPLOYED_URL" ]; then
-            node -e "
-              const fs = require('fs');
-              const cfg = JSON.parse(fs.readFileSync('capacitor.config.json', 'utf8'));
-              cfg.server = { url: process.env.DEPLOYED_URL.replace(/\/$/, ''), cleartext: false };
-              fs.writeFileSync('capacitor.config.json', JSON.stringify(cfg, null, 2));
-            "
-          fi
-          npm install --no-save @capacitor/core @capacitor/cli @capacitor/android
+          node << 'EOF'
+          const fs = require('fs');
+          const url = (process.env.DEPLOYED_URL || '').trim().replace(/\/$/, '');
+          if (url) {
+            const cfg = JSON.parse(fs.readFileSync('capacitor.config.json', 'utf8'));
+            cfg.server = { url, cleartext: false };
+            fs.writeFileSync('capacitor.config.json', JSON.stringify(cfg, null, 2));
+          }
+          EOF
+          npm install --no-save --legacy-peer-deps @capacitor/core @capacitor/cli @capacitor/android
           npx cap add android
+
+      - name: Apply MediStock AI launcher icons
+        run: |
+          mkdir -p resources
+          cp public/pwa-512x512.png resources/icon-only.png || true
+          cp public/pwa-maskable-512x512.png resources/icon-foreground.png || true
+          npx --yes @capacitor/assets generate --android --iconBackgroundColor '#0F766E' --splashBackgroundColor '#0F766E' || true
+
+      - name: Sync web assets and add Android permissions
+        run: |
           npx cap sync android
-
-      - name: Add Android camera & microphone permissions for bill scanner
-        run: |
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-          node -e "
-            const fs = require('fs');
-            let xml = fs.readFileSync('$MANIFEST', 'utf8');
-            const perms = [
-              '    <uses-permission android:name=\"android.permission.CAMERA\" />',
-              '    <uses-permission android:name=\"android.permission.RECORD_AUDIO\" />',
-              '    <uses-feature android:name=\"android.hardware.camera\" android:required=\"false\" />'
-            ];
-            for (const p of perms) {
-              if (!xml.includes(p.trim())) {
-                xml = xml.replace('<uses-permission android:name=\"android.permission.INTERNET\" />',
-                  '<uses-permission android:name=\"android.permission.INTERNET\" />\n' + p);
-              }
+          node << 'EOF'
+          const fs = require('fs');
+          const manifestPath = 'android/app/src/main/AndroidManifest.xml';
+          let xml = fs.readFileSync(manifestPath, 'utf8');
+          const perms = [
+            '    <uses-permission android:name="android.permission.CAMERA" />',
+            '    <uses-permission android:name="android.permission.RECORD_AUDIO" />',
+            '    <uses-feature android:name="android.hardware.camera" android:required="false" />',
+          ];
+          const anchor = '<uses-permission android:name="android.permission.INTERNET" />';
+          for (const perm of perms) {
+            if (!xml.includes(perm.trim()) && xml.includes(anchor)) {
+              xml = xml.replace(anchor, `${anchor}\n${perm}`);
             }
-            fs.writeFileSync('$MANIFEST', xml);
-          "
+          }
+          fs.writeFileSync(manifestPath, xml);
+          EOF
 
-      - name: Compile Android APK with Gradle
-        working-directory: android
+      - name: Accept Android SDK licenses & compile APK
         run: |
+          if [ -n "${ANDROID_HOME:-}" ] && [ -x "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          fi
+          cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --no-daemon
+          cp app/build/outputs/apk/debug/app-debug.apk ../MediStock-AI.apk
 
       - name: Upload MediStock-AI.apk artifact
         uses: actions/upload-artifact@v4
         with:
           name: MediStock-AI-Android-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: MediStock-AI.apk
           if-no-files-found: error
