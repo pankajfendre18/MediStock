@@ -32,6 +32,7 @@ import {
   ProfileSettingsScreen,
   ReportsScreen,
 } from './components/ReportsNotificationsProfileScreens';
+import { ExportShareCenter } from './components/ExportShareCenter';
 import type { AppScreen, InvoiceDraft } from './domain/types';
 import { usePharmacyStore } from './store/usePharmacyStore';
 
@@ -40,7 +41,25 @@ function getInitialScreen(): AppScreen {
   const params = new URLSearchParams(window.location.search);
   if (params.get('autostart') === '1') return 'home';
   const requested = params.get('screen') as AppScreen | null;
-  if (requested && ['splash', 'onboarding', 'auth', 'home', 'scanner', 'inventory', 'expiry', 'low_stock', 'distributors', 'invoices', 'reports', 'notifications', 'profile'].includes(requested)) {
+  if (
+    requested &&
+    [
+      'splash',
+      'onboarding',
+      'auth',
+      'home',
+      'scanner',
+      'inventory',
+      'expiry',
+      'low_stock',
+      'distributors',
+      'invoices',
+      'reports',
+      'export_center',
+      'notifications',
+      'profile',
+    ].includes(requested)
+  ) {
     return requested;
   }
   return 'home';
@@ -50,6 +69,7 @@ export default function App() {
   const store = usePharmacyStore();
   const [screen, setScreen] = useState<AppScreen>(getInitialScreen);
   const [selectedEntityId, setSelectedEntityId] = useState<string | undefined>(undefined);
+  const [selectedMedicineIdsForExport, setSelectedMedicineIdsForExport] = useState<string[]>([]);
   const [capturedPages, setCapturedPages] = useState<CapturedPage[]>([]);
   const [invoiceDraft, setInvoiceDraft] = useState<InvoiceDraft | null>(null);
   const [whatsappModal, setWhatsappModal] = useState<{
@@ -127,6 +147,11 @@ export default function App() {
       isDark={store.isDark}
       onToggleDark={() => store.setIsDark((d) => !d)}
       isOnline={store.isOnline}
+      syncStatus={store.syncStatus}
+      pendingChangesCount={store.pendingChangesCount}
+      onSyncNow={() => {
+        void store.syncNow();
+      }}
       onAddRecentSearch={store.addRecentSearch}
       whatsappModal={whatsappModal}
       onCloseWhatsapp={() => setWhatsappModal(null)}
@@ -155,7 +180,14 @@ export default function App() {
       )}
 
       {screen === 'inventory' && (
-        <InventoryListScreen state={store.state} onNavigate={navigate} />
+        <InventoryListScreen
+          state={store.state}
+          onNavigate={navigate}
+          onExportSelected={(ids) => {
+            setSelectedMedicineIdsForExport(ids);
+            navigate('export_center');
+          }}
+        />
       )}
 
       {screen === 'medicine_detail' && (
@@ -166,6 +198,7 @@ export default function App() {
           onAdjustStock={store.adjustBatchStock}
           onDeleteMedicine={store.deleteMedicine}
           onCreateReturn={store.createPurchaseReturn}
+          onOpenWhatsapp={openWhatsapp}
           onShowToast={showToast}
         />
       )}
@@ -213,6 +246,7 @@ export default function App() {
           state={store.state}
           onNavigate={navigate}
           onSaveDistributor={store.saveDistributor}
+          onOpenWhatsapp={openWhatsapp}
           onShowToast={showToast}
         />
       )}
@@ -252,6 +286,15 @@ export default function App() {
         />
       )}
 
+      {screen === 'export_center' && (
+        <ExportShareCenter
+          state={store.state}
+          initialSelectedMedicineIds={selectedMedicineIdsForExport}
+          onClearInitialSelection={() => setSelectedMedicineIdsForExport([])}
+          onNotify={(msg, tone) => showToast(tone || 'info', msg)}
+        />
+      )}
+
       {screen === 'notifications' && (
         <NotificationsScreen
           notifications={store.notifications}
@@ -268,6 +311,10 @@ export default function App() {
           onToggleDark={() => store.setIsDark((d) => !d)}
           isOnline={store.isOnline}
           isSyncing={store.isSyncing}
+          syncStatus={store.syncStatus}
+          pendingChangesCount={store.pendingChangesCount}
+          syncRevision={store.syncRevision}
+          lastSyncError={store.lastSyncError}
           onSyncNow={store.syncNow}
           onUpdateProfile={store.updateUserProfile}
           onSwitchRole={store.switchRole}

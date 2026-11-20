@@ -1,12 +1,17 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   ArrowLeft,
   ArrowUpDown,
+  CheckSquare,
+  ChevronLeft,
+  ChevronRight,
   Edit3,
   History,
   Plus,
   Search,
+  Share2,
+  Square,
   Trash2,
 } from 'lucide-react';
 import {
@@ -28,6 +33,7 @@ import type {
   PharmacyState,
   StockHistoryEvent,
 } from '../domain/types';
+import { buildMedicineWhatsAppMessage } from '../utils/reportGenerators';
 
 const CATEGORIES: MedicineCategory[] = [
   'Antibiotics',
@@ -48,9 +54,11 @@ const CATEGORIES: MedicineCategory[] = [
 export function InventoryListScreen({
   state,
   onNavigate,
+  onExportSelected,
 }: {
   state: PharmacyState;
   onNavigate: (screen: AppScreen, entityId?: string) => void;
+  onExportSelected?: (medicineIds: string[]) => void;
 }) {
   const [query, setQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
@@ -59,6 +67,9 @@ export function InventoryListScreen({
     'all' | 'in_stock' | 'low_stock' | 'out_of_stock' | 'has_expired'
   >('all');
   const [sortBy, setSortBy] = useState<'name' | 'qty' | 'price' | 'expiry'>('name');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 20;
 
   const manufacturers = useMemo(
     () =>
@@ -109,26 +120,91 @@ export function InventoryListScreen({
       });
   }, [state.medicines, query, categoryFilter, manufacturerFilter, statusFilter, sortBy]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [query, categoryFilter, manufacturerFilter, statusFilter, sortBy]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const paginated = useMemo(
+    () => filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
+    [filtered, safePage]
+  );
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const allVisibleSelected =
+    paginated.length > 0 && paginated.every((m) => selectedIds.includes(m.id));
+
+  const toggleSelectPage = () => {
+    if (allVisibleSelected) {
+      const pageIdSet = new Set(paginated.map((m) => m.id));
+      setSelectedIds((prev) => prev.filter((id) => !pageIdSet.has(id)));
+    } else {
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...paginated.map((m) => m.id)])));
+    }
+  };
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-4 sm:space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h2 className="font-display text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
             Medicine Inventory
           </h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
             {filtered.length} of {state.medicines.length} medicines · Expired stock automatically excluded from sellable count
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => onNavigate('medicine_form')}
-          className="inline-flex items-center gap-2 h-11 px-5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold transition-colors whitespace-nowrap"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add Medicine</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onNavigate('export_center')}
+            className="inline-flex items-center gap-1.5 h-10 sm:h-11 px-3.5 sm:px-4 rounded-xl border border-slate-300 dark:border-slate-700 text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 whitespace-nowrap"
+          >
+            <Share2 className="w-4 h-4" />
+            <span>Export</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavigate('medicine_form')}
+            className="inline-flex items-center gap-2 h-10 sm:h-11 px-4 sm:px-5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Medicine</span>
+          </button>
+        </div>
       </div>
+
+      {/* Multi-select Export Action Bar */}
+      {selectedIds.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-teal-200 bg-teal-50/90 px-4 py-3 dark:border-teal-800 dark:bg-teal-950/50">
+          <p className="text-xs sm:text-sm font-semibold text-teal-900 dark:text-teal-200">
+            {selectedIds.length} medicine{selectedIds.length !== 1 ? 's' : ''} selected
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedIds([])}
+              className="rounded-lg border border-teal-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-teal-800 dark:bg-slate-900 dark:text-slate-200"
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              onClick={() => onExportSelected?.(selectedIds)}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-teal-700 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-teal-800"
+            >
+              <Share2 className="h-3.5 w-3.5" />
+              <span>Export Selected (Excel / PDF / WhatsApp)</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Filter & Search Bar */}
       <div className="bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200 dark:border-slate-800 p-4 space-y-3.5">
@@ -192,8 +268,9 @@ export function InventoryListScreen({
           </div>
         </div>
 
-        {/* Status Segmented Tabs */}
-        <div className="flex flex-wrap items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 w-fit">
+        {/* Status Segmented Tabs (horizontally scrollable on narrow Android screens) */}
+        <div className="max-w-full overflow-x-auto no-scrollbar">
+          <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 min-w-max">
           {(
             [
               ['all', 'All Stock'],
@@ -216,6 +293,7 @@ export function InventoryListScreen({
               {label}
             </button>
           ))}
+          </div>
         </div>
       </div>
 
@@ -240,84 +318,48 @@ export function InventoryListScreen({
             </button>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-500 dark:text-slate-400 bg-slate-50/70 dark:bg-slate-900/40">
-                  <th className="py-3 px-5">Medicine & Composition</th>
-                  <th className="py-3 px-4">Batches & Nearest Expiry</th>
-                  <th className="py-3 px-4 text-right">Purchase / MRP</th>
-                  <th className="py-3 px-4 text-right">Sellable Stock</th>
-                  <th className="py-3 px-5 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 text-sm">
-                {filtered.map((med) => {
-                  const sellable = getMedicineSellableStock(med);
-                  const expired = getMedicineExpiredStock(med);
-                  const nearest = getMedicineNearestExpiry(med);
-                  const latestBatch = med.batches[0];
+          <>
+            {/* Mobile Responsive Card List (Android 360px - 767px) */}
+            <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
+              {paginated.map((med) => {
+                const sellable = getMedicineSellableStock(med);
+                const expired = getMedicineExpiredStock(med);
+                const nearest = getMedicineNearestExpiry(med);
+                const latestBatch = med.batches[0];
+                const isSelected = selectedIds.includes(med.id);
 
-                  return (
-                    <tr
-                      key={med.id}
-                      className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
-                    >
-                      <td className="py-3.5 px-5">
+                return (
+                  <div key={med.id} className="p-3.5 space-y-2.5">
+                    <div className="flex items-start justify-between gap-2.5">
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        <button
+                          type="button"
+                          onClick={() => toggleSelect(med.id)}
+                          aria-label={`Select ${med.name}`}
+                          className="mt-0.5 text-slate-400 hover:text-teal-700 shrink-0"
+                        >
+                          {isSelected ? (
+                            <CheckSquare className="w-5 h-5 text-teal-700 dark:text-teal-400" />
+                          ) : (
+                            <Square className="w-5 h-5" />
+                          )}
+                        </button>
                         <button
                           type="button"
                           onClick={() => onNavigate('medicine_detail', med.id)}
-                          className="text-left group"
+                          className="text-left min-w-0"
                         >
-                          <p className="font-semibold text-slate-900 dark:text-white group-hover:text-teal-700 dark:group-hover:text-teal-400">
+                          <p className="font-semibold text-sm text-slate-900 dark:text-white leading-snug break-words">
                             {med.name}
                           </p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                            {med.genericName} · {med.manufacturer} · {med.category}
+                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                            {med.genericName} · {med.manufacturer}
                           </p>
                         </button>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <p className="font-mono-num text-xs font-medium text-slate-800 dark:text-slate-200">
-                          {med.batches.length} batch{med.batches.length !== 1 ? 'es' : ''}
-                          {nearest.batch ? ` · ${nearest.batch.batchNumber}` : ''}
-                        </p>
-                        {nearest.batch && (
-                          <p
-                            className={`text-xs mt-0.5 font-medium ${
-                              nearest.bucket === 'expired'
-                                ? 'text-red-700 dark:text-red-400'
-                                : nearest.bucket !== 'safe'
-                                  ? 'text-amber-700 dark:text-amber-400'
-                                  : 'text-slate-500 dark:text-slate-400'
-                            }`}
-                          >
-                            Exp {formatExpiryMonthYear(nearest.batch.expiryDate)}
-                            {nearest.bucket === 'expired'
-                              ? ' · Expired'
-                              : nearest.bucket !== 'safe'
-                                ? ` · ${nearest.daysRemaining}d left`
-                                : ''}
-                          </p>
-                        )}
-                      </td>
-                      <td className="py-3.5 px-4 text-right font-mono-num">
-                        {latestBatch ? (
-                          <>
-                            <p className="font-semibold text-slate-900 dark:text-white">
-                              {formatINR(latestBatch.mrp)}
-                            </p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                              Buy {formatINR(latestBatch.purchasePrice)} · {med.gstPercent}% GST
-                            </p>
-                          </>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                      <td className="py-3.5 px-4 text-right font-mono-num">
+                      </div>
+                      <div className="text-right font-mono-num shrink-0">
                         <p
-                          className={`font-bold ${
+                          className={`text-sm font-bold ${
                             sellable === 0
                               ? 'text-red-700 dark:text-red-400'
                               : sellable < med.minStockLevel
@@ -325,28 +367,220 @@ export function InventoryListScreen({
                                 : 'text-emerald-700 dark:text-emerald-400'
                           }`}
                         >
-                          {sellable} units
+                          {sellable} u
                         </p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                          Min {med.minStockLevel}
-                          {expired > 0 ? ` · ${expired} expired` : ''}
-                        </p>
-                      </td>
-                      <td className="py-3.5 px-5 text-right">
+                        <p className="text-[11px] text-slate-500">Min {med.minStockLevel}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 pl-7 text-xs">
+                      <div className="text-slate-600 dark:text-slate-300">
+                        {nearest.batch ? (
+                          <span
+                            className={`font-medium ${
+                              nearest.bucket === 'expired'
+                                ? 'text-red-700 dark:text-red-400'
+                                : nearest.bucket !== 'safe'
+                                  ? 'text-amber-700 dark:text-amber-400'
+                                  : ''
+                            }`}
+                          >
+                            Exp {formatExpiryMonthYear(nearest.batch.expiryDate)}
+                            {expired > 0 ? ` · ${expired} exp` : ''}
+                          </span>
+                        ) : (
+                          <span>No batches</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2.5">
+                        {latestBatch && (
+                          <span className="font-mono-num font-semibold text-slate-800 dark:text-slate-200">
+                            MRP {formatINR(latestBatch.mrp)}
+                          </span>
+                        )}
                         <button
                           type="button"
                           onClick={() => onNavigate('medicine_detail', med.id)}
-                          className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap"
+                          className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 font-semibold text-teal-700 dark:text-teal-400"
                         >
                           Details
                         </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop Full Table */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-500 dark:text-slate-400 bg-slate-50/70 dark:bg-slate-900/40">
+                    <th className="py-3 pl-4 pr-2 w-10">
+                      <button
+                        type="button"
+                        onClick={toggleSelectPage}
+                        aria-label="Select all medicines on page"
+                        className="text-slate-500 hover:text-teal-700"
+                      >
+                        {allVisibleSelected ? (
+                          <CheckSquare className="w-4 h-4 text-teal-700 dark:text-teal-400" />
+                        ) : (
+                          <Square className="w-4 h-4" />
+                        )}
+                      </button>
+                    </th>
+                    <th className="py-3 px-4">Medicine & Composition</th>
+                    <th className="py-3 px-4">Batches & Nearest Expiry</th>
+                    <th className="py-3 px-4 text-right">Purchase / MRP</th>
+                    <th className="py-3 px-4 text-right">Sellable Stock</th>
+                    <th className="py-3 px-5 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 text-sm">
+                  {paginated.map((med) => {
+                    const sellable = getMedicineSellableStock(med);
+                    const expired = getMedicineExpiredStock(med);
+                    const nearest = getMedicineNearestExpiry(med);
+                    const latestBatch = med.batches[0];
+                    const isSelected = selectedIds.includes(med.id);
+
+                    return (
+                      <tr
+                        key={med.id}
+                        className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors ${
+                          isSelected ? 'bg-teal-50/40 dark:bg-teal-950/20' : ''
+                        }`}
+                      >
+                        <td className="py-3.5 pl-4 pr-2">
+                          <button
+                            type="button"
+                            onClick={() => toggleSelect(med.id)}
+                            aria-label={`Select ${med.name}`}
+                            className="text-slate-400 hover:text-teal-700"
+                          >
+                            {isSelected ? (
+                              <CheckSquare className="w-4 h-4 text-teal-700 dark:text-teal-400" />
+                            ) : (
+                              <Square className="w-4 h-4" />
+                            )}
+                          </button>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <button
+                            type="button"
+                            onClick={() => onNavigate('medicine_detail', med.id)}
+                            className="text-left group"
+                          >
+                            <p className="font-semibold text-slate-900 dark:text-white group-hover:text-teal-700 dark:group-hover:text-teal-400">
+                              {med.name}
+                            </p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                              {med.genericName} · {med.manufacturer} · {med.category}
+                            </p>
+                          </button>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <p className="font-mono-num text-xs font-medium text-slate-800 dark:text-slate-200">
+                            {med.batches.length} batch{med.batches.length !== 1 ? 'es' : ''}
+                            {nearest.batch ? ` · ${nearest.batch.batchNumber}` : ''}
+                          </p>
+                          {nearest.batch && (
+                            <p
+                              className={`text-xs mt-0.5 font-medium ${
+                                nearest.bucket === 'expired'
+                                  ? 'text-red-700 dark:text-red-400'
+                                  : nearest.bucket !== 'safe'
+                                    ? 'text-amber-700 dark:text-amber-400'
+                                    : 'text-slate-500 dark:text-slate-400'
+                              }`}
+                            >
+                              Exp {formatExpiryMonthYear(nearest.batch.expiryDate)}
+                              {nearest.bucket === 'expired'
+                                ? ' · Expired'
+                                : nearest.bucket !== 'safe'
+                                  ? ` · ${nearest.daysRemaining}d left`
+                                  : ''}
+                            </p>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono-num">
+                          {latestBatch ? (
+                            <>
+                              <p className="font-semibold text-slate-900 dark:text-white">
+                                {formatINR(latestBatch.mrp)}
+                              </p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                Buy {formatINR(latestBatch.purchasePrice)} · {med.gstPercent}% GST
+                              </p>
+                            </>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono-num">
+                          <p
+                            className={`font-bold ${
+                              sellable === 0
+                                ? 'text-red-700 dark:text-red-400'
+                                : sellable < med.minStockLevel
+                                  ? 'text-amber-700 dark:text-amber-400'
+                                  : 'text-emerald-700 dark:text-emerald-400'
+                            }`}
+                          >
+                            {sellable} units
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            Min {med.minStockLevel}
+                            {expired > 0 ? ` · ${expired} expired` : ''}
+                          </p>
+                        </td>
+                        <td className="py-3.5 px-5 text-right">
+                          <button
+                            type="button"
+                            onClick={() => onNavigate('medicine_detail', med.id)}
+                            className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap"
+                          >
+                            Details
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination Footer */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between gap-2 border-t border-slate-100 dark:border-slate-800 px-4 py-3 text-xs">
+                <span className="text-slate-500 dark:text-slate-400">
+                  Page {safePage} of {totalPages} ({filtered.length} items)
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={safePage <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 dark:border-slate-700 px-2.5 py-1.5 font-semibold text-slate-700 dark:text-slate-200 disabled:opacity-40"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                    Prev
+                  </button>
+                  <button
+                    type="button"
+                    disabled={safePage >= totalPages}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 dark:border-slate-700 px-2.5 py-1.5 font-semibold text-slate-700 dark:text-slate-200 disabled:opacity-40"
+                  >
+                    Next
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -363,6 +597,7 @@ export function MedicineDetailScreen({
   onAdjustStock,
   onDeleteMedicine,
   onCreateReturn,
+  onOpenWhatsapp,
   onShowToast,
 }: {
   medicine: Medicine | undefined;
@@ -382,6 +617,7 @@ export function MedicineDetailScreen({
     quantity: number;
     reason: 'expired' | 'near_expiry' | 'damaged' | 'excess_stock' | 'rate_mismatch';
   }) => void;
+  onOpenWhatsapp?: (title: string, message: string) => void;
   onShowToast: (type: 'success' | 'error' | 'info', message: string) => void;
 }) {
   const [selectedBatchId, setSelectedBatchId] = useState(medicine?.batches[0]?.id || '');
@@ -464,11 +700,26 @@ export function MedicineDetailScreen({
           <span>Inventory</span>
         </button>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {onOpenWhatsapp && (
+            <button
+              type="button"
+              onClick={() =>
+                onOpenWhatsapp(
+                  `Share ${medicine.name} on WhatsApp`,
+                  buildMedicineWhatsAppMessage(medicine, state.user)
+                )
+              }
+              className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold"
+            >
+              <Share2 className="w-4 h-4" />
+              <span>WhatsApp</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => onNavigate('medicine_form', medicine.id)}
-            className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold"
+            className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs sm:text-sm font-semibold"
           >
             <Edit3 className="w-4 h-4" />
             <span>Edit Medicine</span>
@@ -477,7 +728,7 @@ export function MedicineDetailScreen({
             <button
               type="button"
               onClick={() => setConfirmDeleteOpen(true)}
-              className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl border border-red-200 dark:border-red-900 text-red-700 dark:text-red-400 text-sm font-semibold hover:bg-red-50 dark:hover:bg-red-950/40"
+              className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl border border-red-200 dark:border-red-900 text-red-700 dark:text-red-400 text-xs sm:text-sm font-semibold hover:bg-red-50 dark:hover:bg-red-950/40"
             >
               <Trash2 className="w-4 h-4" />
               <span>Delete</span>
@@ -547,7 +798,71 @@ export function MedicineDetailScreen({
               Each batch is tracked independently with purchase cost, MRP, distributor, and expiry safety state
             </p>
           </div>
-          <div className="overflow-x-auto">
+          {/* Mobile Batch Cards */}
+          <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
+            {medicine.batches.map((b) => {
+              const exp = classifyBatchExpiry(b.expiryDate);
+              return (
+                <div key={b.id} className="p-4 space-y-2 text-xs">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-mono-num text-sm font-bold text-slate-900 dark:text-white">
+                        {b.batchNumber} ({b.packSize})
+                      </p>
+                      <p className="text-slate-500 dark:text-slate-400">
+                        {b.distributorName}
+                        {b.freeQuantityReceived > 0 ? ` · +${b.freeQuantityReceived} free` : ''}
+                      </p>
+                    </div>
+                    <div className="text-right font-mono-num">
+                      <p className="text-sm font-bold text-slate-900 dark:text-white">{b.availableStock} u</p>
+                      <p className="text-slate-500">MRP {formatINR(b.mrp)}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className={`font-semibold ${
+                        exp.bucket === 'expired'
+                          ? 'text-red-700 dark:text-red-400'
+                          : exp.bucket !== 'safe'
+                            ? 'text-amber-700 dark:text-amber-400'
+                            : 'text-emerald-700 dark:text-emerald-400'
+                      }`}
+                    >
+                      Exp {formatShortDate(b.expiryDate)} ·{' '}
+                      {exp.bucket === 'expired'
+                        ? 'Expired'
+                        : exp.bucket === 'safe'
+                          ? 'Safe'
+                          : `${exp.daysRemaining}d left`}
+                    </span>
+                    {b.availableStock > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onCreateReturn({
+                            medicineId: medicine.id,
+                            batchId: b.id,
+                            quantity: b.availableStock,
+                            reason: exp.bucket === 'expired' ? 'expired' : 'near_expiry',
+                          });
+                          onShowToast(
+                            'success',
+                            `Purchase return created for Batch ${b.batchNumber} (${b.availableStock} units).`
+                          );
+                        }}
+                        className="font-semibold text-teal-700 dark:text-teal-400 underline"
+                      >
+                        Return Stock
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left border-collapse text-sm">
               <thead>
                 <tr className="border-b border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-500 dark:text-slate-400 bg-slate-50/70 dark:bg-slate-900/40">
@@ -894,9 +1209,11 @@ export function MedicineFormScreen({
     existingBatch?.distributorId || state.distributors[0]?.id || ''
   );
   const [errors, setErrors] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
     const errs: string[] = [];
     if (!name.trim()) errs.push('Medicine name is required.');
     if (!genericName.trim()) errs.push('Generic name is required.');
@@ -918,6 +1235,7 @@ export function MedicineFormScreen({
       return;
     }
 
+    setSubmitting(true);
     const dist = state.distributors.find((d) => d.id === distributorId);
     onSave(
       {
@@ -1085,19 +1403,24 @@ export function MedicineFormScreen({
         )}
       </div>
 
-      <div className="flex justify-end gap-3">
+      <div className="sticky bottom-16 lg:bottom-2 z-10 flex items-center justify-end gap-2.5 rounded-2xl border border-slate-200/90 bg-white/95 p-3 shadow-md backdrop-blur-sm dark:border-slate-800 dark:bg-[#111B1E]/95">
         <button
           type="button"
           onClick={onCancel}
-          className="h-11 px-5 rounded-xl border border-slate-300 dark:border-slate-700 text-sm font-medium text-slate-700 dark:text-slate-200"
+          className="h-11 px-4 sm:px-5 rounded-xl border border-slate-300 dark:border-slate-700 text-sm font-medium text-slate-700 dark:text-slate-200"
         >
           Cancel
         </button>
         <button
           type="submit"
-          className="h-11 px-6 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold transition-colors"
+          disabled={submitting}
+          className="h-11 flex-1 sm:flex-initial px-6 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold transition-colors disabled:opacity-60"
         >
-          {editingMedicine ? 'Save Changes' : 'Add to Inventory'}
+          {submitting
+            ? 'Saving...'
+            : editingMedicine
+              ? 'Save Changes'
+              : 'Add to Inventory'}
         </button>
       </div>
     </form>

@@ -13,7 +13,12 @@ import {
   formatShortDate,
 } from '../domain/pharmacyMath';
 import type { AppScreen, ExpiryBucket, PharmacyState } from '../domain/types';
-import { downloadCSV } from '../utils/exportUtils';
+import {
+  buildWhatsAppReportMessage,
+  downloadBlob,
+  generateExcelReport,
+  generatePdfReport,
+} from '../utils/reportGenerators';
 
 // =========================================================================
 // SCREEN 12: EXPIRY MANAGEMENT
@@ -101,47 +106,57 @@ export function ExpiryManagementScreen({
     [batchRows, bucketFilter]
   );
 
-  const handleExportCsv = () => {
-    downloadCSV(
-      `medistock-expiry-report-${new Date().toISOString().slice(0, 10)}.csv`,
-      ['Medicine', 'Batch', 'Expiry Date', 'Status', 'Days Left', 'Qty', 'Purchase Value (INR)', 'Distributor'],
-      visibleRows.map((r) => [
-        r.medicineName,
-        r.batchNumber,
-        r.expiryDate,
-        r.bucket,
-        r.daysRemaining,
-        r.stock,
-        r.stockValue.toFixed(2),
-        r.distributorName,
-      ])
-    );
-    onShowToast('success', 'Expiry report exported as CSV (Excel compatible).');
+  const handleExportExcel = async () => {
+    const reportType =
+      bucketFilter === 'expired'
+        ? 'expired'
+        : bucketFilter === 'expiring_30' || bucketFilter === 'expiring_60' || bucketFilter === 'expiring_90'
+          ? 'near_expiry'
+          : 'expiry';
+    try {
+      const res = await generateExcelReport(state, { reportType });
+      downloadBlob(res.blob, res.filename);
+      onShowToast('success', `Excel report downloaded: ${res.filename}`);
+    } catch {
+      onShowToast('error', 'Failed to generate Excel expiry report.');
+    }
+  };
+
+  const handleExportPdf = () => {
+    const reportType =
+      bucketFilter === 'expired'
+        ? 'expired'
+        : bucketFilter === 'expiring_30' || bucketFilter === 'expiring_60' || bucketFilter === 'expiring_90'
+          ? 'near_expiry'
+          : 'expiry';
+    try {
+      const res = generatePdfReport(state, { reportType });
+      downloadBlob(res.blob, res.filename);
+      onShowToast('success', `PDF report downloaded: ${res.filename}`);
+    } catch {
+      onShowToast('error', 'Failed to generate PDF expiry report.');
+    }
   };
 
   const handleWhatsappShare = () => {
-    const urgent = batchRows.filter((r) => r.bucket !== 'safe');
-    const lines = [
-      `*${state.user.storeName} — Expiry & Return Report*`,
-      `Expired Stock Value: ${formatINR(counts.expiredValue)}`,
-      `Near-Expiry Value (<=90d): ${formatINR(counts.nearValue)}`,
-      '',
-      ...urgent.map(
-        (r) =>
-          `• ${r.medicineName} | Batch ${r.batchNumber} | Exp ${r.expiryDate} | Qty ${r.stock} | ${r.distributorName}`
-      ),
-    ];
-    onOpenWhatsapp('Share Expiry Report on WhatsApp', lines.join('\n'));
+    const reportType =
+      bucketFilter === 'expired'
+        ? 'expired'
+        : bucketFilter === 'expiring_30' || bucketFilter === 'expiring_60' || bucketFilter === 'expiring_90'
+          ? 'near_expiry'
+          : 'expiry';
+    const message = buildWhatsAppReportMessage(state, { reportType });
+    onOpenWhatsapp('Share Expiry Report on WhatsApp', message);
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4 sm:space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h2 className="font-display text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
             Expiry Management
           </h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
             Expired batches are strictly blocked from sellable stock and ready for distributor credit return.
           </p>
         </div>
@@ -149,19 +164,19 @@ export function ExpiryManagementScreen({
         <div className="flex flex-wrap items-center gap-2 no-print">
           <button
             type="button"
-            onClick={handleExportCsv}
+            onClick={handleExportExcel}
             className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 whitespace-nowrap"
           >
             <Download className="w-4 h-4" />
-            <span>Export Excel</span>
+            <span>Excel (.xlsx)</span>
           </button>
           <button
             type="button"
-            onClick={() => window.print()}
+            onClick={handleExportPdf}
             className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 whitespace-nowrap"
           >
             <Printer className="w-4 h-4" />
-            <span>Print PDF</span>
+            <span>PDF Report</span>
           </button>
           <button
             type="button"
@@ -210,8 +225,9 @@ export function ExpiryManagementScreen({
         </div>
       </div>
 
-      {/* 5-Bucket Interactive Segmented Filter */}
-      <div className="flex flex-wrap items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 w-fit">
+      {/* 5-Bucket Interactive Segmented Filter (horizontally scrollable on small phones) */}
+      <div className="max-w-full overflow-x-auto no-scrollbar">
+        <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 min-w-max">
         {(
           [
             ['all', `All (${batchRows.length})`],
@@ -235,11 +251,90 @@ export function ExpiryManagementScreen({
             {label}
           </button>
         ))}
+        </div>
       </div>
 
-      {/* Batch Expiry Table */}
+      {/* Batch Expiry Cards (Mobile) + Table (Desktop) */}
       <div className="bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
+          {visibleRows.map((row) => {
+            const isExp = row.bucket === 'expired';
+            const isWarn = row.bucket !== 'safe' && !isExp;
+            return (
+              <div
+                key={`${row.medicineId}_${row.batchId}`}
+                className={`p-3.5 space-y-2 text-xs ${
+                  isExp
+                    ? 'bg-red-50/40 dark:bg-red-950/15'
+                    : isWarn
+                      ? 'bg-amber-50/35 dark:bg-amber-950/10'
+                      : ''
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('medicine_detail', row.medicineId)}
+                    className="text-left min-w-0"
+                  >
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white break-words">
+                      {row.medicineName}
+                    </p>
+                    <p className="font-mono-num text-slate-500">
+                      Batch {row.batchNumber} · {row.distributorName}
+                    </p>
+                  </button>
+                  <div className="text-right font-mono-num shrink-0">
+                    <p className="text-sm font-bold text-slate-900 dark:text-white">{row.stock} u</p>
+                    <p className="text-slate-500">{formatINR(row.stockValue)}</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span
+                    className={`font-semibold inline-flex items-center gap-1 ${
+                      isExp
+                        ? 'text-red-700 dark:text-red-400'
+                        : isWarn
+                          ? 'text-amber-700 dark:text-amber-400'
+                          : 'text-emerald-700 dark:text-emerald-400'
+                    }`}
+                  >
+                    {(isExp || isWarn) && <AlertTriangle className="w-3.5 h-3.5" />}
+                    {formatShortDate(row.expiryDate)} ·{' '}
+                    {isExp
+                      ? 'Expired'
+                      : isWarn
+                        ? `${row.daysRemaining}d left`
+                        : 'Safe'}
+                  </span>
+                  {(isExp || isWarn) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onCreateReturn({
+                          medicineId: row.medicineId,
+                          batchId: row.batchId,
+                          quantity: row.stock,
+                          reason: isExp ? 'expired' : 'near_expiry',
+                        });
+                        onShowToast(
+                          'success',
+                          `Initiated purchase return for ${row.medicineName} (Batch ${row.batchNumber}).`
+                        );
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 font-semibold text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-900"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Return</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse text-sm">
             <thead>
               <tr className="border-b border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-500 dark:text-slate-400 bg-slate-50/70 dark:bg-slate-900/40">
@@ -367,46 +462,39 @@ export function LowStockScreen({
     [reorderList]
   );
 
-  const handleExportCsv = () => {
-    downloadCSV(
-      `medistock-reorder-list-${new Date().toISOString().slice(0, 10)}.csv`,
-      ['Medicine', 'Status', 'Available Sellable', 'Min Level', 'Suggested Reorder Qty', 'Last Distributor', 'Est. Cost (INR)'],
-      reorderList.map((r) => [
-        r.medicineName,
-        r.status === 'out_of_stock' ? 'Out of Stock' : 'Low Stock',
-        r.availableSellable,
-        r.minStockLevel,
-        r.suggestedReorderQty,
-        r.lastDistributorName,
-        r.estimatedCost.toFixed(2),
-      ])
-    );
-    onShowToast('success', 'Smart reorder list downloaded as CSV.');
+  const handleExportExcel = async () => {
+    try {
+      const res = await generateExcelReport(state, { reportType: 'low_stock' });
+      downloadBlob(res.blob, res.filename);
+      onShowToast('success', `Low-stock Excel report downloaded: ${res.filename}`);
+    } catch {
+      onShowToast('error', 'Failed to generate Excel reorder report.');
+    }
+  };
+
+  const handleExportPdf = () => {
+    try {
+      const res = generatePdfReport(state, { reportType: 'low_stock' });
+      downloadBlob(res.blob, res.filename);
+      onShowToast('success', `Low-stock PDF report downloaded: ${res.filename}`);
+    } catch {
+      onShowToast('error', 'Failed to generate PDF reorder report.');
+    }
   };
 
   const handleShareReorder = () => {
-    const lines = [
-      `*Purchase Order Request — ${state.user.storeName}*`,
-      `GSTIN: ${state.user.storeGstin}`,
-      '',
-      ...reorderList.map(
-        (r, i) =>
-          `${i + 1}. ${r.medicineName} — Order Qty: ${r.suggestedReorderQty} (Current: ${r.availableSellable}) [${r.lastDistributorName}]`
-      ),
-      '',
-      `Est. Order Total: ${formatINR(totalEstimatedOrder)}`,
-    ];
-    onOpenWhatsapp('Share Reorder List on WhatsApp', lines.join('\n'));
+    const message = buildWhatsAppReportMessage(state, { reportType: 'low_stock' });
+    onOpenWhatsapp('Share Low Stock Alert on WhatsApp', message);
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4 sm:space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h2 className="font-display text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
             Low Stock & Smart Reorder List
           </h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
             {reorderList.length} medicine(s) below minimum stock threshold · Estimated restock cost{' '}
             <span className="font-mono-num font-semibold text-slate-900 dark:text-white">
               {formatINR(totalEstimatedOrder)}
@@ -417,12 +505,21 @@ export function LowStockScreen({
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={handleExportCsv}
+            onClick={handleExportExcel}
             disabled={reorderList.length === 0}
             className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 whitespace-nowrap"
           >
             <Download className="w-4 h-4" />
-            <span>Export CSV</span>
+            <span>Excel (.xlsx)</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleExportPdf}
+            disabled={reorderList.length === 0}
+            className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 whitespace-nowrap"
+          >
+            <Printer className="w-4 h-4" />
+            <span>PDF</span>
           </button>
           <button
             type="button"
@@ -431,7 +528,7 @@ export function LowStockScreen({
             className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold disabled:opacity-50 whitespace-nowrap"
           >
             <Share2 className="w-4 h-4" />
-            <span>Send Order via WhatsApp</span>
+            <span>WhatsApp Order</span>
           </button>
         </div>
       </div>
@@ -447,7 +544,60 @@ export function LowStockScreen({
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* Mobile Reorder Cards */}
+          <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
+            {reorderList.map((item) => (
+              <div key={item.medicineId} className="p-3.5 space-y-2.5 text-xs">
+                <div className="flex items-start justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('medicine_detail', item.medicineId)}
+                    className="text-left min-w-0"
+                  >
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white break-words">
+                      {item.medicineName}
+                    </p>
+                    <p
+                      className={`font-semibold ${
+                        item.status === 'out_of_stock'
+                          ? 'text-red-700 dark:text-red-400'
+                          : 'text-amber-700 dark:text-amber-400'
+                      }`}
+                    >
+                      {item.status === 'out_of_stock' ? 'Out of Stock' : 'Low Stock'} · {item.lastDistributorName}
+                    </p>
+                  </button>
+                  <div className="text-right font-mono-num shrink-0">
+                    <p className="text-sm font-bold text-teal-700 dark:text-teal-400">
+                      +{item.suggestedReorderQty} u
+                    </p>
+                    <p className="text-slate-500">{formatINR(item.estimatedCost)}</p>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono-num text-red-700 dark:text-red-400 font-semibold">
+                    Available: {item.availableSellable} u
+                  </span>
+                  <label className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+                    <span>Min:</span>
+                    <input
+                      type="number"
+                      min={1}
+                      aria-label={`Minimum stock level for ${item.medicineName}`}
+                      value={item.minStockLevel}
+                      onChange={(e) =>
+                        onUpdateMinStock(item.medicineId, Number(e.target.value) || 0)
+                      }
+                      className="w-16 h-8 px-2 text-right font-mono-num rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900"
+                    />
+                  </label>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left border-collapse text-sm">
               <thead>
                 <tr className="border-b border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-500 dark:text-slate-400 bg-slate-50/70 dark:bg-slate-900/40">
@@ -511,6 +661,7 @@ export function LowStockScreen({
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </div>

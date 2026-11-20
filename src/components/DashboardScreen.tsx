@@ -9,6 +9,7 @@ import {
   Package,
   Plus,
   ScanLine,
+  Share2,
 } from 'lucide-react';
 import {
   Area,
@@ -131,11 +132,11 @@ export function DashboardScreen({ state, onNavigate }: DashboardScreenProps) {
               Capture single or multi-page wholesale bills. MediStock AI extracts medicines, batches, free schemes, GST, and expiry dates for your verification before saving.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
             <button
               type="button"
               onClick={() => onNavigate('scanner')}
-              className="inline-flex items-center gap-2.5 h-12 px-6 rounded-xl bg-white text-teal-900 hover:bg-teal-50 font-semibold text-sm transition-colors shadow-sm whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-2 h-11 sm:h-12 px-4 sm:px-6 rounded-xl bg-white text-teal-900 hover:bg-teal-50 font-semibold text-sm transition-colors shadow-sm whitespace-nowrap shrink-0"
             >
               <Camera className="w-4 h-4 shrink-0" />
               <span>Scan Distributor Bill</span>
@@ -144,10 +145,18 @@ export function DashboardScreen({ state, onNavigate }: DashboardScreenProps) {
             <button
               type="button"
               onClick={() => onNavigate('invoices')}
-              className="inline-flex items-center gap-2 h-12 px-4 rounded-xl bg-white/15 hover:bg-white/25 text-white font-medium text-sm transition-colors whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-2 h-11 sm:h-12 px-3.5 sm:px-4 rounded-xl bg-white/15 hover:bg-white/25 text-white font-medium text-xs sm:text-sm transition-colors whitespace-nowrap shrink-0"
             >
               <FileText className="w-4 h-4 shrink-0" />
-              <span>Recent Invoices ({state.invoices.length})</span>
+              <span>Invoices ({state.invoices.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigate('export_center')}
+              className="inline-flex items-center gap-2 h-11 sm:h-12 px-3.5 sm:px-4 rounded-xl bg-white/15 hover:bg-white/25 text-white font-medium text-xs sm:text-sm transition-colors whitespace-nowrap shrink-0"
+            >
+              <Share2 className="w-4 h-4 shrink-0" />
+              <span>Export & Share</span>
             </button>
           </div>
         </div>
@@ -570,15 +579,15 @@ function KpiCard({
     <button
       type="button"
       onClick={onClick}
-      className="bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200/90 dark:border-slate-800 p-4 text-left hover:border-teal-600/40 dark:hover:border-teal-500/40 transition-colors"
+      className="min-w-0 bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200/90 dark:border-slate-800 p-3.5 sm:p-4 text-left hover:border-teal-600/40 dark:hover:border-teal-500/40 transition-colors"
     >
-      <p className="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">
+      <p className="text-[11px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 truncate">
         {label}
       </p>
-      <p className={`font-display font-mono-num text-xl sm:text-2xl font-bold mt-1.5 truncate ${valueTone}`}>
+      <p className={`font-display font-mono-num text-lg sm:text-2xl font-bold mt-1.5 truncate ${valueTone}`}>
         {value}
       </p>
-      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 truncate">
+      <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-1 truncate">
         {detail}
       </p>
     </button>

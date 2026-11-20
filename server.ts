@@ -5,6 +5,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
+import { mergePharmacyStates } from './src/domain/syncMerge';
+import type { PharmacyState } from './src/domain/types';
 
 dotenv.config();
 
@@ -16,6 +18,65 @@ const DATA_FILE = path.resolve(__dirname, '.medistock-store.json');
 
 const app = express();
 app.use(express.json({ limit: '30mb' }));
+
+// Allow Capacitor Android WebView & local web origins to sync cleanly with /api/*
+app.use('/api', (req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  }
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+  next();
+});
+
+// Active SSE real-time sync subscribers (Android + Website clients)
+const sseClients = new Set<express.Response>();
+
+function readStoredState(): PharmacyState | null {
+  try {
+    if (!fs.existsSync(DATA_FILE)) return null;
+    const raw = fs.readFileSync(DATA_FILE, 'utf-8');
+    const parsed = JSON.parse(raw) as PharmacyState;
+    if (parsed && Array.isArray(parsed.medicines) && Array.isArray(parsed.distributors)) {
+      return parsed;
+    }
+    return null;
+  } catch (err) {
+    console.error('Error reading persisted state:', err);
+    return null;
+  }
+}
+
+function writeStoredStateAtomic(state: PharmacyState): void {
+  const tmpFile = `${DATA_FILE}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmpFile, JSON.stringify(state), 'utf-8');
+  fs.renameSync(tmpFile, DATA_FILE);
+}
+
+function broadcastStateEvent(
+  eventName: 'state:init' | 'state:updated',
+  payload: {
+    state: PharmacyState;
+    revision: number;
+    updatedAt: string;
+    updatedByClientId?: string;
+  }
+): void {
+  const frame = `event: ${eventName}\ndata: ${JSON.stringify(payload)}\n\n`;
+  for (const client of sseClients) {
+    try {
+      client.write(frame);
+    } catch {
+      sseClients.delete(client);
+    }
+  }
+}
 
 function createGeminiClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -36,33 +97,151 @@ function createGeminiClient(): GoogleGenAI {
 
 // Health check
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, service: 'MediStock AI' });
+  const stored = readStoredState();
+  res.json({
+    ok: true,
+    service: 'MediStock AI',
+    revision: stored?.syncRevision ?? 0,
+    liveClients: sseClients.size,
+  });
 });
 
-// Persistent state load/save for offline-first sync
+// Persistent state load for offline-first sync (backward compatible)
 app.get('/api/state', (_req, res) => {
   try {
-    if (!fs.existsSync(DATA_FILE)) {
-      res.json({ exists: false, data: null });
+    const stored = readStoredState();
+    if (!stored) {
+      res.json({ exists: false, data: null, revision: 0, updatedAt: null });
       return;
     }
-    const raw = fs.readFileSync(DATA_FILE, 'utf-8');
-    res.json({ exists: true, data: JSON.parse(raw) });
+    res.json({
+      exists: true,
+      data: stored,
+      revision: stored.syncRevision ?? 1,
+      updatedAt: stored.lastSyncedAt ?? new Date().toISOString(),
+    });
   } catch (err) {
     console.error('Error reading persisted state:', err);
     res.status(500).json({ error: 'Failed to read pharmacy state.' });
   }
 });
 
+// Real-time Server-Sent Events stream for instant Android <-> Website sync
+app.get('/api/state/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  sseClients.add(res);
+
+  const current = readStoredState();
+  if (current) {
+    const initPayload = {
+      state: current,
+      revision: current.syncRevision ?? 1,
+      updatedAt: current.lastSyncedAt ?? new Date().toISOString(),
+    };
+    res.write(`event: state:init\ndata: ${JSON.stringify(initPayload)}\n\n`);
+  } else {
+    res.write(`event: state:empty\ndata: ${JSON.stringify({ revision: 0 })}\n\n`);
+  }
+
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(': ping\n\n');
+    } catch {
+      clearInterval(heartbeat);
+      sseClients.delete(res);
+    }
+  }, 20000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    sseClients.delete(res);
+  });
+});
+
+// Revision-aware state save with conflict merging & live broadcast
 app.put('/api/state', (req, res) => {
   try {
-    const payload = req.body;
-    if (!payload || typeof payload !== 'object' || !Array.isArray(payload.medicines)) {
+    const body = req.body as
+      | PharmacyState
+      | { state?: PharmacyState; baseRevision?: number; clientId?: string; forceReplace?: boolean };
+
+    const isEnvelope =
+      body &&
+      typeof body === 'object' &&
+      'state' in body &&
+      body.state &&
+      typeof body.state === 'object';
+
+    const incoming: PharmacyState | undefined = isEnvelope
+      ? body.state
+      : (body as PharmacyState);
+    const baseRevision = isEnvelope && typeof body.baseRevision === 'number' ? body.baseRevision : undefined;
+    const clientId = isEnvelope && typeof body.clientId === 'string' ? body.clientId : undefined;
+    const forceReplace = isEnvelope && body.forceReplace === true;
+
+    if (!incoming || typeof incoming !== 'object' || !Array.isArray(incoming.medicines)) {
       res.status(400).json({ error: 'Invalid pharmacy state payload.' });
       return;
     }
-    fs.writeFileSync(DATA_FILE, JSON.stringify(payload), 'utf-8');
-    res.json({ ok: true, syncedAt: new Date().toISOString() });
+
+    const existing = readStoredState();
+    const existingRev = existing?.syncRevision ?? 0;
+    const syncedAt = new Date().toISOString();
+
+    let finalState: PharmacyState;
+    let merged = false;
+
+    if (
+      existing &&
+      !forceReplace &&
+      baseRevision !== undefined &&
+      existingRev > baseRevision
+    ) {
+      // Concurrent edit detected from another device (e.g. Android & Web offline/simultaneous)
+      finalState = mergePharmacyStates(existing, {
+        ...incoming,
+        lastSyncedAt: syncedAt,
+      });
+      finalState.syncRevision = Math.max(existingRev, incoming.syncRevision ?? 0) + 1;
+      finalState.lastSyncedAt = syncedAt;
+      merged = true;
+    } else {
+      const nextRevision = Math.max(existingRev, incoming.syncRevision ?? 0) + 1;
+      finalState = {
+        ...incoming,
+        syncRevision: nextRevision,
+        lastSyncedAt: syncedAt,
+        deletedMedicineIds: Array.from(
+          new Set([
+            ...(!forceReplace && existing?.deletedMedicineIds ? existing.deletedMedicineIds : []),
+            ...(incoming.deletedMedicineIds || []),
+          ])
+        ).slice(-500),
+      };
+    }
+
+    writeStoredStateAtomic(finalState);
+
+    const revision = finalState.syncRevision ?? 1;
+    broadcastStateEvent('state:updated', {
+      state: finalState,
+      revision,
+      updatedAt: syncedAt,
+      updatedByClientId: clientId,
+    });
+
+    res.json({
+      ok: true,
+      syncedAt,
+      revision,
+      merged,
+      state: finalState,
+    });
   } catch (err) {
     console.error('Error saving pharmacy state:', err);
     res.status(500).json({ error: 'Failed to save pharmacy state.' });

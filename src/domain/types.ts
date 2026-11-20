@@ -203,6 +203,8 @@ export interface NotificationItem {
   read: boolean;
 }
 
+export type SyncStatus = 'live' | 'syncing' | 'offline' | 'error';
+
 export type AppScreen =
   | 'splash'
   | 'onboarding'
@@ -222,6 +224,7 @@ export type AppScreen =
   | 'invoices'
   | 'invoice_detail'
   | 'reports'
+  | 'export_center'
   | 'notifications'
   | 'profile';
 
@@ -236,4 +239,6 @@ export interface PharmacyState {
   recentSearches: string[];
   user: UserProfile;
   lastSyncedAt: string;
+  syncRevision?: number;
+  deletedMedicineIds?: string[];
 }

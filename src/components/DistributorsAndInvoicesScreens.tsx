@@ -20,6 +20,12 @@ import type {
   PharmacyState,
   PurchaseInvoice,
 } from '../domain/types';
+import {
+  buildWhatsAppReportMessage,
+  downloadBlob,
+  formatDateDDMMYYYY,
+  generateInvoicePdf,
+} from '../utils/reportGenerators';
 
 // =========================================================================
 // SCREEN 14: DISTRIBUTOR LIST
@@ -28,11 +34,13 @@ export function DistributorListScreen({
   state,
   onNavigate,
   onSaveDistributor,
+  onOpenWhatsapp,
   onShowToast,
 }: {
   state: PharmacyState;
   onNavigate: (screen: AppScreen, entityId?: string) => void;
   onSaveDistributor: (d: Omit<Distributor, 'id' | 'createdAt'> & { id?: string }) => void;
+  onOpenWhatsapp?: (title: string, message: string) => void;
   onShowToast: (type: 'success' | 'error' | 'info', message: string) => void;
 }) {
   const [query, setQuery] = useState('');
@@ -106,14 +114,31 @@ export function DistributorListScreen({
             {state.distributors.length} registered wholesale suppliers · Automatically matched when scanning bills
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setModalOpen(true)}
-          className="inline-flex items-center gap-2 h-11 px-5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold whitespace-nowrap"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add Distributor</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {onOpenWhatsapp && (
+            <button
+              type="button"
+              onClick={() =>
+                onOpenWhatsapp(
+                  'Distributor Payment Summary (WhatsApp)',
+                  buildWhatsAppReportMessage(state, { reportType: 'distributor_payments' })
+                )
+              }
+              className="inline-flex items-center gap-1.5 h-10 sm:h-11 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold whitespace-nowrap"
+            >
+              <Share2 className="w-4 h-4" />
+              <span>Payment Summary</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setModalOpen(true)}
+            className="inline-flex items-center gap-2 h-10 sm:h-11 px-4 sm:px-5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs sm:text-sm font-semibold whitespace-nowrap"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Distributor</span>
+          </button>
+        </div>
       </div>
 
       <div className="relative max-w-md">
@@ -187,14 +212,14 @@ export function DistributorListScreen({
       {/* Add Distributor Modal */}
       {modalOpen && (
         <div
-          className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
           role="dialog"
           aria-modal="true"
           aria-label="Add Distributor"
         >
           <form
             onSubmit={handleAddSubmit}
-            className="w-full max-w-lg bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4"
+            className="w-full max-w-lg max-h-[90dvh] overflow-y-auto bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200 dark:border-slate-800 p-5 sm:p-6 space-y-4"
           >
             <div className="flex items-center justify-between">
               <h3 className="font-display text-lg font-bold text-slate-900 dark:text-white">
@@ -627,7 +652,8 @@ export function InvoiceHistoryScreen({
           />
         </div>
 
-        <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80">
+        <div className="max-w-full overflow-x-auto no-scrollbar">
+          <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 min-w-max">
           {(
             [
               ['all', 'All Bills'],
@@ -648,11 +674,55 @@ export function InvoiceHistoryScreen({
               {label}
             </button>
           ))}
+          </div>
         </div>
       </div>
 
       <div className="bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Mobile Invoice Cards */}
+        <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800/80">
+          {filtered.map((inv) => (
+            <button
+              key={inv.id}
+              type="button"
+              onClick={() => onNavigate('invoice_detail', inv.id)}
+              className="w-full p-3.5 text-left space-y-1.5 hover:bg-slate-50 dark:hover:bg-slate-800/40"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-mono-num text-sm font-bold text-slate-900 dark:text-white truncate">
+                    {inv.invoiceNumber}
+                  </p>
+                  <p className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate">
+                    {inv.distributorName}
+                  </p>
+                </div>
+                <div className="text-right font-mono-num shrink-0">
+                  <p className="text-sm font-bold text-slate-900 dark:text-white">
+                    {formatINR(inv.grandTotal)}
+                  </p>
+                  <p className="text-[11px] text-slate-500">GST {formatINR(inv.totalGstAmount)}</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                <span>
+                  {formatShortDate(inv.invoiceDate)} · {inv.items.length} items ({inv.totalUnitsAdded} u)
+                </span>
+                <span
+                  className={`font-semibold ${
+                    inv.gstReconciled
+                      ? 'text-emerald-700 dark:text-emerald-400'
+                      : 'text-amber-700 dark:text-amber-400'
+                  }`}
+                >
+                  {inv.gstReconciled ? 'Reconciled' : 'Pending'}
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse text-sm">
             <thead>
               <tr className="border-b border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-500 dark:text-slate-400 bg-slate-50/70 dark:bg-slate-900/40">
@@ -758,13 +828,18 @@ export function InvoiceDetailScreen({
 
   const shareSummary = () => {
     const lines = [
-      `*Purchase Invoice Summary — ${state.user.storeName}*`,
-      `Distributor: ${invoice.distributorName} (${invoice.distributorGstin})`,
-      `Invoice No: ${invoice.invoiceNumber} | Date: ${invoice.invoiceDate}`,
+      `🧾 *Purchase Invoice Summary — ${state.user.storeName}*`,
+      `Distributor: *${invoice.distributorName}* (${invoice.distributorGstin || 'N/A'})`,
+      `Invoice No: *${invoice.invoiceNumber}* | Date: ${formatDateDDMMYYYY(invoice.invoiceDate)}`,
       `Taxable: ${formatINR(invoice.subtotalTaxable)} | GST: ${formatINR(invoice.totalGstAmount)}`,
-      `Grand Total: ${formatINR(invoice.grandTotal)} (${invoice.totalUnitsAdded} units)`,
+      `Grand Total: *${formatINR(invoice.grandTotal)}* (${invoice.totalUnitsAdded} units)`,
     ];
     onOpenWhatsapp('Share Purchase Invoice on WhatsApp', lines.join('\n'));
+  };
+
+  const handleDownloadPdf = () => {
+    const pdf = generateInvoicePdf(state, invoice);
+    downloadBlob(pdf.blob, pdf.filename);
   };
 
   return (
@@ -800,11 +875,11 @@ export function InvoiceDetailScreen({
           </button>
           <button
             type="button"
-            onClick={() => window.print()}
+            onClick={handleDownloadPdf}
             className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold"
           >
             <Printer className="w-4 h-4" />
-            <span>Download / Print PDF</span>
+            <span>Download PDF</span>
           </button>
           <button
             type="button"

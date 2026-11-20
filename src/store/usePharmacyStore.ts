@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createInitialSeedState } from '../data/seedData';
 import {
   classifyBatchExpiry,
@@ -6,6 +6,7 @@ import {
   getMedicineSellableStock,
   round2,
 } from '../domain/pharmacyMath';
+import { mergePharmacyStates } from '../domain/syncMerge';
 import type {
   Distributor,
   InvoiceDraft,
@@ -15,11 +16,13 @@ import type {
   PharmacyState,
   PurchaseReturn,
   StockHistoryEvent,
+  SyncStatus,
   UserProfile,
   UserRole,
 } from '../domain/types';
 
 const STORAGE_KEY = 'medistock_ai_state_v1';
+const PENDING_SYNC_KEY = 'medistock_ai_pending_v1';
 const THEME_KEY = 'medistock_ai_theme_v1';
 
 function loadLocalState(): PharmacyState {
@@ -37,6 +40,28 @@ function loadLocalState(): PharmacyState {
   return createInitialSeedState();
 }
 
+function loadPendingCount(): number {
+  try {
+    const raw = localStorage.getItem(PENDING_SYNC_KEY);
+    const n = raw ? Number(raw) : 0;
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function savePendingCount(count: number): void {
+  try {
+    if (count > 0) {
+      localStorage.setItem(PENDING_SYNC_KEY, String(count));
+    } else {
+      localStorage.removeItem(PENDING_SYNC_KEY);
+    }
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
 export function usePharmacyStore() {
   const [state, setState] = useState<PharmacyState>(() => loadLocalState());
   const [isDark, setIsDark] = useState<boolean>(() => {
@@ -50,6 +75,28 @@ export function usePharmacyStore() {
     typeof navigator !== 'undefined' ? navigator.onLine : true
   );
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(
+    typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'syncing'
+  );
+  const [pendingChangesCount, setPendingChangesCount] = useState<number>(() => loadPendingCount());
+  const [lastSyncError, setLastSyncError] = useState<string | null>(null);
+
+  const clientIdRef = useRef<string>(
+    `client_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+  );
+  const stateRef = useRef<PharmacyState>(state);
+  const pendingCountRef = useRef<number>(pendingChangesCount);
+  const syncInFlightRef = useRef<boolean>(false);
+  const queuedPushRef = useRef<{ state: PharmacyState; forceReplace?: boolean } | null>(null);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    pendingCountRef.current = pendingChangesCount;
+    savePendingCount(pendingChangesCount);
+  }, [pendingChangesCount]);
 
   // Sync dark mode class on <html>
   useEffect(() => {
@@ -61,62 +108,306 @@ export function usePharmacyStore() {
     }
   }, [isDark]);
 
-  // Listen to online/offline connectivity
-  useEffect(() => {
-    const onOnline = () => setIsOnline(true);
-    const onOffline = () => setIsOnline(false);
-    window.addEventListener('online', onOnline);
-    window.addEventListener('offline', onOffline);
-    return () => {
-      window.removeEventListener('online', onOnline);
-      window.removeEventListener('offline', onOffline);
-    };
-  }, []);
-
-  // Load persisted server state on initial mount if localStorage wasn't populated
-  useEffect(() => {
-    let cancelled = false;
-    const hasLocal = Boolean(localStorage.getItem(STORAGE_KEY));
-    if (!hasLocal) {
-      fetch('/api/state')
-        .then((r) => (r.ok ? r.json() : null))
-        .then((res) => {
-          if (!cancelled && res?.exists && res?.data?.medicines) {
-            setState(res.data as PharmacyState);
-          }
-        })
-        .catch(() => {
-          // Offline fallback already loaded
-        });
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Persist to localStorage & background server sync
-  const persistState = useCallback((next: PharmacyState) => {
+  const writeLocalCache = useCallback((next: PharmacyState) => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     } catch {
       // storage quota fallback
     }
-    if (navigator.onLine) {
-      fetch('/api/state', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(next),
-      }).catch(() => {
-        // Offline queue stays in localStorage
-      });
-    }
   }, []);
 
+  const pushStateToServer = useCallback(
+    async (
+      targetState: PharmacyState,
+      options?: { forceReplace?: boolean }
+    ): Promise<{ ok: boolean; error?: string }> => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        setSyncStatus('offline');
+        setPendingChangesCount((c) => Math.max(1, c));
+        return { ok: false, error: 'Offline — changes queued locally.' };
+      }
+
+      if (syncInFlightRef.current) {
+        queuedPushRef.current = { state: targetState, forceReplace: options?.forceReplace };
+        return { ok: true };
+      }
+
+      syncInFlightRef.current = true;
+      setIsSyncing(true);
+      setSyncStatus('syncing');
+
+      try {
+        const res = await fetch('/api/state', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            state: targetState,
+            baseRevision: targetState.syncRevision ?? 0,
+            clientId: clientIdRef.current,
+            forceReplace: options?.forceReplace === true,
+          }),
+        });
+
+        if (!res.ok) {
+          throw new Error(`Sync server responded with HTTP ${res.status}`);
+        }
+
+        const data = (await res.json()) as {
+          ok?: boolean;
+          revision?: number;
+          syncedAt?: string;
+          merged?: boolean;
+          state?: PharmacyState;
+        };
+
+        if (data.state && Array.isArray(data.state.medicines)) {
+          // Only overwrite React state if no newer queued local write is waiting
+          if (!queuedPushRef.current) {
+            setState(data.state);
+            stateRef.current = data.state;
+            writeLocalCache(data.state);
+          } else {
+            // Carry forward server revision onto queued state so next flush doesn't conflict unnecessarily
+            queuedPushRef.current = {
+              ...queuedPushRef.current,
+              state: {
+                ...queuedPushRef.current.state,
+                syncRevision: data.revision ?? data.state.syncRevision,
+              },
+            };
+          }
+        }
+
+        setLastSyncError(null);
+        if (!queuedPushRef.current) {
+          setPendingChangesCount(0);
+          setSyncStatus('live');
+        }
+        return { ok: true };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unable to reach sync server.';
+        setLastSyncError(msg);
+        setSyncStatus(typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'error');
+        setPendingChangesCount((c) => Math.max(1, c));
+        return { ok: false, error: msg };
+      } finally {
+        syncInFlightRef.current = false;
+        const queued = queuedPushRef.current;
+        if (queued) {
+          queuedPushRef.current = null;
+          void pushStateToServer(queued.state, { forceReplace: queued.forceReplace });
+        } else {
+          setIsSyncing(false);
+        }
+      }
+    },
+    [writeLocalCache]
+  );
+
+  const reconcileIncomingServerState = useCallback(
+    (remoteState: PharmacyState, updatedByClientId?: string) => {
+      if (updatedByClientId && updatedByClientId === clientIdRef.current) {
+        return;
+      }
+      const localRev = stateRef.current.syncRevision ?? 0;
+      const remoteRev = remoteState.syncRevision ?? 0;
+
+      if (pendingCountRef.current > 0) {
+        // Device had unsynced offline edits — merge cleanly without losing either side's changes
+        const merged = mergePharmacyStates(remoteState, stateRef.current);
+        merged.syncRevision = Math.max(localRev, remoteRev);
+        setState(merged);
+        stateRef.current = merged;
+        writeLocalCache(merged);
+        void pushStateToServer(merged);
+        return;
+      }
+
+      if (remoteRev >= localRev || remoteState.lastSyncedAt !== stateRef.current.lastSyncedAt) {
+        setState(remoteState);
+        stateRef.current = remoteState;
+        writeLocalCache(remoteState);
+      }
+    },
+    [pushStateToServer, writeLocalCache]
+  );
+
+  // Initial authoritative server pull + bootstrap if server has no state yet
+  useEffect(() => {
+    let cancelled = false;
+
+    const pullInitialState = async () => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        setSyncStatus('offline');
+        return;
+      }
+      try {
+        const r = await fetch('/api/state', { cache: 'no-store' });
+        if (!r.ok || cancelled) return;
+        const res = (await r.json()) as {
+          exists?: boolean;
+          data?: PharmacyState | null;
+          revision?: number;
+        };
+        if (cancelled) return;
+
+        if (res?.exists && res.data && Array.isArray(res.data.medicines)) {
+          reconcileIncomingServerState(res.data);
+          setSyncStatus('live');
+          setLastSyncError(null);
+        } else {
+          // First-time server bootstrap with local/seed state so Android & Web immediately share one source of truth
+          await pushStateToServer(stateRef.current);
+        }
+      } catch {
+        if (!cancelled) {
+          setSyncStatus(typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'error');
+        }
+      }
+    };
+
+    void pullInitialState();
+    return () => {
+      cancelled = true;
+    };
+  }, [pushStateToServer, reconcileIncomingServerState]);
+
+  // Real-time Server-Sent Events (SSE) subscription for instant Android <-> Website updates
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof EventSource === 'undefined') {
+      return;
+    }
+
+    let es: EventSource | null = null;
+    let reconnectTimer: number | null = null;
+    let attempt = 0;
+    let closed = false;
+
+    const connect = () => {
+      if (closed) return;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        setSyncStatus('offline');
+        return;
+      }
+
+      try {
+        es = new EventSource('/api/state/stream');
+      } catch {
+        return;
+      }
+
+      es.onopen = () => {
+        attempt = 0;
+        setLastSyncError(null);
+        if (pendingCountRef.current > 0) {
+          void pushStateToServer(stateRef.current);
+        } else {
+          setSyncStatus('live');
+        }
+      };
+
+      const handleEvent = (ev: MessageEvent) => {
+        try {
+          const parsed = JSON.parse(ev.data) as {
+            state?: PharmacyState;
+            updatedByClientId?: string;
+          };
+          if (parsed?.state && Array.isArray(parsed.state.medicines)) {
+            reconcileIncomingServerState(parsed.state, parsed.updatedByClientId);
+          }
+          setSyncStatus('live');
+          setLastSyncError(null);
+        } catch {
+          // ignore malformed SSE frame
+        }
+      };
+
+      es.addEventListener('state:init', handleEvent as EventListener);
+      es.addEventListener('state:updated', handleEvent as EventListener);
+
+      es.onerror = () => {
+        es?.close();
+        es = null;
+        if (closed) return;
+        setSyncStatus(typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'syncing');
+        const delays = [1000, 2000, 5000, 10000];
+        const delay = delays[Math.min(attempt, delays.length - 1)];
+        attempt += 1;
+        reconnectTimer = window.setTimeout(connect, delay);
+      };
+    };
+
+    const handleOnline = () => {
+      setIsOnline(true);
+      if (pendingCountRef.current > 0) {
+        void pushStateToServer(stateRef.current);
+      }
+      if (!es || es.readyState === EventSource.CLOSED) {
+        attempt = 0;
+        connect();
+      }
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      setSyncStatus('offline');
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine) {
+        // When returning to Android app or browser tab, ensure pending changes flush and latest server state is pulled
+        if (pendingCountRef.current > 0) {
+          void pushStateToServer(stateRef.current);
+        } else {
+          fetch('/api/state', { cache: 'no-store' })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((res) => {
+              if (res?.exists && res.data?.medicines) {
+                reconcileIncomingServerState(res.data as PharmacyState);
+              }
+            })
+            .catch(() => {
+              // ignore background refresh error
+            });
+        }
+        if (!es || es.readyState === EventSource.CLOSED) {
+          attempt = 0;
+          connect();
+        }
+      }
+    };
+
+    connect();
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      closed = true;
+      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
+      es?.close();
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [pushStateToServer, reconcileIncomingServerState]);
+
+  // Persist to localStorage & background real-time server sync
+  const persistState = useCallback(
+    (next: PharmacyState, options?: { forceReplace?: boolean }) => {
+      writeLocalCache(next);
+      setPendingChangesCount((c) => c + 1);
+      void pushStateToServer(next, options);
+    },
+    [pushStateToServer, writeLocalCache]
+  );
+
   const updateState = useCallback(
-    (updater: (prev: PharmacyState) => PharmacyState) => {
+    (updater: (prev: PharmacyState) => PharmacyState, options?: { forceReplace?: boolean }) => {
       setState((prev) => {
         const next = updater(prev);
-        persistState(next);
+        stateRef.current = next;
+        persistState(next, options);
         return next;
       });
     },
@@ -124,27 +415,11 @@ export function usePharmacyStore() {
   );
 
   const syncNow = useCallback(async () => {
-    setIsSyncing(true);
-    try {
-      const syncedAt = new Date().toISOString();
-      const payload = { ...state, lastSyncedAt: syncedAt };
-      const res = await fetch('/api/state', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error('Server sync returned an error.');
-      updateState((prev) => ({ ...prev, lastSyncedAt: syncedAt }));
-      return { ok: true };
-    } catch (err) {
-      return {
-        ok: false,
-        error: err instanceof Error ? err.message : 'Unable to reach sync server.',
-      };
-    } finally {
-      setIsSyncing(false);
-    }
-  }, [state, updateState]);
+    const syncedAt = new Date().toISOString();
+    const payload: PharmacyState = { ...stateRef.current, lastSyncedAt: syncedAt };
+    const result = await pushStateToServer(payload);
+    return result;
+  }, [pushStateToServer]);
 
   const commitInvoice = useCallback(
     (draft: InvoiceDraft) => {
@@ -246,6 +521,7 @@ export function usePharmacyStore() {
           ...prev,
           medicines: nextMedicines,
           stockHistory: nextHistory,
+          deletedMedicineIds: (prev.deletedMedicineIds || []).filter((id) => id !== savedId),
           auditLogs: [
             {
               id: `aud_${Date.now()}`,
@@ -274,9 +550,13 @@ export function usePharmacyStore() {
       updateState((prev) => {
         const target = prev.medicines.find((m) => m.id === medicineId);
         if (!target) return prev;
+        const deletedIds = Array.from(
+          new Set([...(prev.deletedMedicineIds || []), medicineId])
+        ).slice(-500);
         return {
           ...prev,
           medicines: prev.medicines.filter((m) => m.id !== medicineId),
+          deletedMedicineIds: deletedIds,
           auditLogs: [
             {
               id: `aud_${Date.now()}`,
@@ -655,17 +935,21 @@ export function usePharmacyStore() {
       if (!backup || !Array.isArray(backup.medicines) || !Array.isArray(backup.distributors)) {
         throw new Error('Invalid MediStock AI backup file structure.');
       }
-      updateState(() => ({
-        ...backup,
-        lastSyncedAt: new Date().toISOString(),
-      }));
+      updateState(
+        () => ({
+          ...backup,
+          deletedMedicineIds: [],
+          lastSyncedAt: new Date().toISOString(),
+        }),
+        { forceReplace: true }
+      );
     },
     [updateState]
   );
 
   const resetToDemoData = useCallback(() => {
     const fresh = createInitialSeedState();
-    updateState(() => fresh);
+    updateState(() => ({ ...fresh, deletedMedicineIds: [] }), { forceReplace: true });
   }, [updateState]);
 
   // Derived live notifications from real inventory state
@@ -762,6 +1046,10 @@ export function usePharmacyStore() {
     setIsDark,
     isOnline,
     isSyncing,
+    syncStatus,
+    pendingChangesCount,
+    lastSyncError,
+    syncRevision: state.syncRevision ?? 0,
     notifications,
     unreadNotificationCount,
     syncNow,

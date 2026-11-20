@@ -38,10 +38,18 @@ import type {
   AppScreen,
   NotificationItem,
   PharmacyState,
+  SyncStatus,
   UserProfile,
   UserRole,
 } from '../domain/types';
-import { downloadCSV, downloadJSON } from '../utils/exportUtils';
+import { downloadJSON } from '../utils/exportUtils';
+import {
+  buildWhatsAppReportMessage,
+  downloadBlob,
+  formatDateTimeIndian,
+  generateExcelReport,
+  generatePdfReport,
+} from '../utils/reportGenerators';
 
 // =========================================================================
 // SCREEN 18: REPORTS & ANALYTICS
@@ -116,80 +124,46 @@ export function ReportsScreen({
       .sort((a, b) => b.total - a.total);
   }, [state.distributors, state.invoices]);
 
-  const handleExportReport = () => {
-    if (tab === 'gst') {
-      downloadCSV(
-        `medistock-gst-summary-${new Date().toISOString().slice(0, 10)}.csv`,
-        ['Invoice No', 'Date', 'Distributor', 'GSTIN', 'Taxable (INR)', 'CGST', 'SGST', 'Total GST', 'Grand Total', 'Reconciled'],
-        state.invoices.map((i) => [
-          i.invoiceNumber,
-          i.invoiceDate,
-          i.distributorName,
-          i.distributorGstin,
-          i.subtotalTaxable.toFixed(2),
-          i.cgstAmount.toFixed(2),
-          i.sgstAmount.toFixed(2),
-          i.totalGstAmount.toFixed(2),
-          i.grandTotal.toFixed(2),
-          i.gstReconciled ? 'Yes' : 'Pending',
-        ])
-      );
-    } else if (tab === 'distributors') {
-      downloadCSV(
-        `medistock-distributor-purchases-${new Date().toISOString().slice(0, 10)}.csv`,
-        ['Distributor', 'GSTIN', 'Invoices', 'Total Purchased (INR)', 'GST Paid (INR)', 'Outstanding (INR)'],
-        distributorComparison.map((d) => [
-          d.name,
-          d.gstin,
-          d.invoices,
-          d.total,
-          d.gst,
-          d.outstanding,
-        ])
-      );
-    } else {
-      downloadCSV(
-        `medistock-inventory-valuation-${new Date().toISOString().slice(0, 10)}.csv`,
-        ['Medicine', 'Category', 'Manufacturer', 'Batch', 'Expiry', 'Stock', 'Purchase Rate', 'MRP', 'Purchase Valuation (INR)'],
-        state.medicines.flatMap((m) =>
-          m.batches.map((b) => [
-            m.name,
-            m.category,
-            m.manufacturer,
-            b.batchNumber,
-            b.expiryDate,
-            b.availableStock,
-            b.purchasePrice,
-            b.mrp,
-            (b.availableStock * b.purchasePrice).toFixed(2),
-          ])
-        )
-      );
+  const activeReportType =
+    tab === 'gst'
+      ? 'purchase_history'
+      : tab === 'distributors'
+        ? 'distributor_purchases'
+        : 'stock_valuation';
+
+  const handleExportExcel = async () => {
+    try {
+      const res = await generateExcelReport(state, { reportType: activeReportType });
+      downloadBlob(res.blob, res.filename);
+      onShowToast('success', `Excel workbook downloaded: ${res.filename}`);
+    } catch {
+      onShowToast('error', 'Failed to generate Excel workbook.');
     }
-    onShowToast('success', 'Report exported to Excel-ready CSV.');
+  };
+
+  const handleExportPdf = () => {
+    try {
+      const res = generatePdfReport(state, { reportType: activeReportType });
+      downloadBlob(res.blob, res.filename);
+      onShowToast('success', `PDF report downloaded: ${res.filename}`);
+    } catch {
+      onShowToast('error', 'Failed to generate PDF report.');
+    }
   };
 
   const handleWhatsappSummary = () => {
-    const text = [
-      `*MediStock AI Pharmacy Report — ${state.user.storeName}*`,
-      `Total Medicines: ${stats.totalMedicines} | Sellable Stock: ${stats.totalSellableStock} units`,
-      `Inventory Purchase Value: ${formatINR(stats.totalInventoryPurchaseValue)}`,
-      `Inventory MRP Value: ${formatINR(stats.totalInventoryMrpValue)}`,
-      `Input GST Credit (ITC): ${formatINR(gstSummary.totalGst)}`,
-      `Expired Stock Value: ${formatINR(stats.expiredStockValue)}`,
-      `Low / Out-of-Stock Items: ${reorderList.length}`,
-    ].join('\n');
-    onOpenWhatsapp('Share Analytics Summary on WhatsApp', text);
+    const message = buildWhatsAppReportMessage(state, { reportType: activeReportType });
+    onOpenWhatsapp('Share Pharmacy Report on WhatsApp', message);
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4 sm:space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h2 className="font-display text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
             Reports & Analytics
           </h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
             Valuation, GSTR-2B input tax credit summary, distributor comparison, and expiry exposure
           </p>
         </div>
@@ -197,19 +171,27 @@ export function ReportsScreen({
         <div className="flex flex-wrap items-center gap-2 no-print">
           <button
             type="button"
-            onClick={handleExportReport}
-            className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 whitespace-nowrap"
+            onClick={() => onNavigate('export_center')}
+            className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold whitespace-nowrap"
           >
-            <Download className="w-4 h-4" />
-            <span>Export Excel</span>
+            <Share2 className="w-4 h-4" />
+            <span>Export & Share Center</span>
           </button>
           <button
             type="button"
-            onClick={() => window.print()}
+            onClick={handleExportExcel}
+            className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 whitespace-nowrap"
+          >
+            <Download className="w-4 h-4" />
+            <span>Excel (.xlsx)</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleExportPdf}
             className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 whitespace-nowrap"
           >
             <Printer className="w-4 h-4" />
-            <span>Export PDF</span>
+            <span>PDF</span>
           </button>
           <button
             type="button"
@@ -222,8 +204,9 @@ export function ReportsScreen({
         </div>
       </div>
 
-      {/* Report Tabs */}
-      <div className="flex flex-wrap items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 w-fit no-print">
+      {/* Report Tabs (horizontally scrollable on small phones) */}
+      <div className="max-w-full overflow-x-auto no-scrollbar no-print">
+        <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 min-w-max">
         {(
           [
             ['valuation', 'Inventory Valuation'],
@@ -245,6 +228,7 @@ export function ReportsScreen({
             {label}
           </button>
         ))}
+        </div>
       </div>
 
       {tab === 'valuation' && (
@@ -315,32 +299,34 @@ export function ReportsScreen({
                 GST Tax Slab Breakdown
               </h3>
             </div>
-            <table className="w-full text-left border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-500">
-                  <th className="py-3 px-5">GST Rate Slab</th>
-                  <th className="py-3 px-4 text-right">Taxable Value</th>
-                  <th className="py-3 px-4 text-right">CGST</th>
-                  <th className="py-3 px-4 text-right">SGST</th>
-                  <th className="py-3 px-5 text-right">Total Tax</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 font-mono-num">
-                {gstSummary.slabs.map((slab) => (
-                  <tr key={slab.gstPercent}>
-                    <td className="py-3 px-5 font-semibold text-slate-900 dark:text-white">
-                      {slab.gstPercent}% GST
-                    </td>
-                    <td className="py-3 px-4 text-right">{formatINR(slab.taxable)}</td>
-                    <td className="py-3 px-4 text-right">{formatINR(slab.gst / 2)}</td>
-                    <td className="py-3 px-4 text-right">{formatINR(slab.gst / 2)}</td>
-                    <td className="py-3 px-5 text-right font-bold text-teal-700 dark:text-teal-400">
-                      {formatINR(slab.gst)}
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-500">
+                    <th className="py-3 px-4 sm:px-5">GST Rate Slab</th>
+                    <th className="py-3 px-4 text-right">Taxable Value</th>
+                    <th className="py-3 px-4 text-right">CGST</th>
+                    <th className="py-3 px-4 text-right">SGST</th>
+                    <th className="py-3 px-4 sm:px-5 text-right">Total Tax</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 font-mono-num">
+                  {gstSummary.slabs.map((slab) => (
+                    <tr key={slab.gstPercent}>
+                      <td className="py-3 px-4 sm:px-5 font-semibold text-slate-900 dark:text-white">
+                        {slab.gstPercent}% GST
+                      </td>
+                      <td className="py-3 px-4 text-right">{formatINR(slab.taxable)}</td>
+                      <td className="py-3 px-4 text-right">{formatINR(slab.gst / 2)}</td>
+                      <td className="py-3 px-4 text-right">{formatINR(slab.gst / 2)}</td>
+                      <td className="py-3 px-4 sm:px-5 text-right font-bold text-teal-700 dark:text-teal-400">
+                        {formatINR(slab.gst)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -373,41 +359,43 @@ export function ReportsScreen({
           </div>
 
           <div className="bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-            <table className="w-full text-left border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-500">
-                  <th className="py-3 px-5">Distributor</th>
-                  <th className="py-3 px-4 text-right">Bills</th>
-                  <th className="py-3 px-4 text-right">Total Purchases</th>
-                  <th className="py-3 px-4 text-right">GST Paid</th>
-                  <th className="py-3 px-5 text-right">Outstanding</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 font-mono-num">
-                {distributorComparison.map((d) => (
-                  <tr key={d.id}>
-                    <td className="py-3 px-5 font-sans">
-                      <button
-                        type="button"
-                        onClick={() => onNavigate('distributor_detail', d.id)}
-                        className="font-semibold text-slate-900 dark:text-white hover:text-teal-700 dark:hover:text-teal-400"
-                      >
-                        {d.name}
-                      </button>
-                      <p className="font-mono-num text-xs text-slate-500">{d.gstin}</p>
-                    </td>
-                    <td className="py-3 px-4 text-right">{d.invoices}</td>
-                    <td className="py-3 px-4 text-right font-bold text-slate-900 dark:text-white">
-                      {formatINR(d.total)}
-                    </td>
-                    <td className="py-3 px-4 text-right">{formatINR(d.gst)}</td>
-                    <td className="py-3 px-5 text-right font-semibold text-amber-700 dark:text-amber-400">
-                      {formatINR(d.outstanding)}
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-500">
+                    <th className="py-3 px-5">Distributor</th>
+                    <th className="py-3 px-4 text-right">Bills</th>
+                    <th className="py-3 px-4 text-right">Total Purchases</th>
+                    <th className="py-3 px-4 text-right">GST Paid</th>
+                    <th className="py-3 px-5 text-right">Outstanding</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 font-mono-num">
+                  {distributorComparison.map((d) => (
+                    <tr key={d.id}>
+                      <td className="py-3 px-5 font-sans">
+                        <button
+                          type="button"
+                          onClick={() => onNavigate('distributor_detail', d.id)}
+                          className="font-semibold text-slate-900 dark:text-white hover:text-teal-700 dark:hover:text-teal-400"
+                        >
+                          {d.name}
+                        </button>
+                        <p className="font-mono-num text-xs text-slate-500">{d.gstin}</p>
+                      </td>
+                      <td className="py-3 px-4 text-right">{d.invoices}</td>
+                      <td className="py-3 px-4 text-right font-bold text-slate-900 dark:text-white">
+                        {formatINR(d.total)}
+                      </td>
+                      <td className="py-3 px-4 text-right">{formatINR(d.gst)}</td>
+                      <td className="py-3 px-5 text-right font-semibold text-amber-700 dark:text-amber-400">
+                        {formatINR(d.outstanding)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -417,52 +405,54 @@ export function ReportsScreen({
           {state.purchaseReturns.length === 0 ? (
             <p className="p-8 text-sm text-slate-500 text-center">No purchase returns logged yet.</p>
           ) : (
-            <table className="w-full text-left border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-500">
-                  <th className="py-3 px-5">Return No & Date</th>
-                  <th className="py-3 px-4">Medicine & Batch</th>
-                  <th className="py-3 px-4">Distributor</th>
-                  <th className="py-3 px-4 text-right">Qty</th>
-                  <th className="py-3 px-4 text-right">Credit Note</th>
-                  <th className="py-3 px-5 text-right">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                {state.purchaseReturns.map((r) => (
-                  <tr key={r.id}>
-                    <td className="py-3 px-5 font-mono-num text-xs">
-                      <p className="font-semibold text-slate-900 dark:text-white">{r.returnNumber}</p>
-                      <p className="text-slate-500">{r.date}</p>
-                    </td>
-                    <td className="py-3 px-4">
-                      <p className="font-semibold text-slate-900 dark:text-white">{r.medicineName}</p>
-                      <p className="font-mono-num text-xs text-slate-500">
-                        Batch {r.batchNumber} · {r.reason}
-                      </p>
-                    </td>
-                    <td className="py-3 px-4 text-xs text-slate-600 dark:text-slate-300">
-                      {r.distributorName}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono-num">{r.quantity}</td>
-                    <td className="py-3 px-4 text-right font-mono-num font-bold text-slate-900 dark:text-white">
-                      {formatINR(r.creditAmount)}
-                    </td>
-                    <td className="py-3 px-5 text-right text-xs font-semibold">
-                      <span
-                        className={
-                          r.status === 'credited'
-                            ? 'text-emerald-700 dark:text-emerald-400'
-                            : 'text-amber-700 dark:text-amber-400'
-                        }
-                      >
-                        {r.status === 'credited' ? 'Credited' : 'Pending Credit'}
-                      </span>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-500">
+                    <th className="py-3 px-5">Return No & Date</th>
+                    <th className="py-3 px-4">Medicine & Batch</th>
+                    <th className="py-3 px-4">Distributor</th>
+                    <th className="py-3 px-4 text-right">Qty</th>
+                    <th className="py-3 px-4 text-right">Credit Note</th>
+                    <th className="py-3 px-5 text-right">Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                  {state.purchaseReturns.map((r) => (
+                    <tr key={r.id}>
+                      <td className="py-3 px-5 font-mono-num text-xs">
+                        <p className="font-semibold text-slate-900 dark:text-white">{r.returnNumber}</p>
+                        <p className="text-slate-500">{r.date}</p>
+                      </td>
+                      <td className="py-3 px-4">
+                        <p className="font-semibold text-slate-900 dark:text-white">{r.medicineName}</p>
+                        <p className="font-mono-num text-xs text-slate-500">
+                          Batch {r.batchNumber} · {r.reason}
+                        </p>
+                      </td>
+                      <td className="py-3 px-4 text-xs text-slate-600 dark:text-slate-300">
+                        {r.distributorName}
+                      </td>
+                      <td className="py-3 px-4 text-right font-mono-num">{r.quantity}</td>
+                      <td className="py-3 px-4 text-right font-mono-num font-bold text-slate-900 dark:text-white">
+                        {formatINR(r.creditAmount)}
+                      </td>
+                      <td className="py-3 px-5 text-right text-xs font-semibold">
+                        <span
+                          className={
+                            r.status === 'credited'
+                              ? 'text-emerald-700 dark:text-emerald-400'
+                              : 'text-amber-700 dark:text-amber-400'
+                          }
+                        >
+                          {r.status === 'credited' ? 'Credited' : 'Pending Credit'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
@@ -627,6 +617,10 @@ export function ProfileSettingsScreen({
   onToggleDark,
   isOnline,
   isSyncing,
+  syncStatus = isOnline ? 'live' : 'offline',
+  pendingChangesCount = 0,
+  syncRevision = 0,
+  lastSyncError = null,
   onSyncNow,
   onUpdateProfile,
   onSwitchRole,
@@ -640,6 +634,10 @@ export function ProfileSettingsScreen({
   onToggleDark: () => void;
   isOnline: boolean;
   isSyncing: boolean;
+  syncStatus?: SyncStatus;
+  pendingChangesCount?: number;
+  syncRevision?: number;
+  lastSyncError?: string | null;
   onSyncNow: () => Promise<{ ok: boolean; error?: string }>;
   onUpdateProfile: (partial: Partial<UserProfile>) => void;
   onSwitchRole: (role: UserRole) => void;
@@ -886,37 +884,51 @@ export function ProfileSettingsScreen({
               </button>
             </div>
 
-            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                {isOnline ? (
-                  <Cloud className="w-4 h-4 text-emerald-600" />
-                ) : (
-                  <CloudOff className="w-4 h-4 text-amber-600" />
-                )}
-                <div>
-                  <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                    {isOnline ? 'Online Cloud Sync' : 'Offline Local Cache'}
-                  </p>
-                  <p className="text-[11px] font-mono-num text-slate-500">
-                    Last sync {state.lastSyncedAt.slice(0, 16).replace('T', ' ')}
-                  </p>
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  {isOnline ? (
+                    <Cloud className="w-4 h-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <CloudOff className="w-4 h-4 text-amber-600 shrink-0" />
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
+                      {syncStatus === 'live'
+                        ? 'Live Real-Time Sync (Android ↔ Web)'
+                        : syncStatus === 'syncing'
+                          ? 'Synchronizing changes...'
+                          : syncStatus === 'offline'
+                            ? 'Offline Local Queue Active'
+                            : 'Sync Connection Interrupted'}
+                    </p>
+                    <p className="text-[11px] font-mono-num text-slate-500 truncate">
+                      Rev #{syncRevision} · Last sync {formatDateTimeIndian(new Date(state.lastSyncedAt))}
+                      {pendingChangesCount > 0 ? ` · ${pendingChangesCount} pending` : ''}
+                    </p>
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  disabled={isSyncing}
+                  onClick={async () => {
+                    const res = await onSyncNow();
+                    onShowToast(
+                      res.ok ? 'success' : 'error',
+                      res.ok ? 'Inventory synchronized with server.' : res.error || 'Sync failed.'
+                    );
+                  }}
+                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold shrink-0"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                  <span>Sync</span>
+                </button>
               </div>
-              <button
-                type="button"
-                disabled={isSyncing}
-                onClick={async () => {
-                  const res = await onSyncNow();
-                  onShowToast(
-                    res.ok ? 'success' : 'error',
-                    res.ok ? 'Inventory synchronized with server.' : res.error || 'Sync failed.'
-                  );
-                }}
-                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                <span>Sync</span>
-              </button>
+              {lastSyncError && (
+                <p className="text-[11px] text-amber-700 dark:text-amber-400">
+                  {lastSyncError} — Auto-retry is active when network reconnects.
+                </p>
+              )}
             </div>
           </div>
 

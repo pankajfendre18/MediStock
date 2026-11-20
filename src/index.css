@@ -8,10 +8,17 @@
     --font-mono: 'JetBrains Mono', ui-monospace, monospace;
   }
 
+  html, body {
+    overflow-x: clip;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
   body {
     font-family: var(--font-body);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    min-height: 100dvh;
   }
 
   h1, h2, h3, h4, .font-display {
@@ -22,14 +29,40 @@
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
   }
+
+  input, select, textarea {
+    scroll-margin-bottom: 140px;
+    scroll-margin-top: 90px;
+  }
 }
 
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
 
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.pl-safe {
+  padding-left: env(safe-area-inset-left, 0px);
+}
+
+.pr-safe {
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* Hide scrollbars cleanly on horizontal chip strips while preserving touch scrolling */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 /* Smooth reduced-motion compliance */

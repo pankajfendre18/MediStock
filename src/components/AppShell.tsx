@@ -24,8 +24,9 @@ import {
   X,
 } from 'lucide-react';
 import { getMedicineSellableStock, formatINR } from '../domain/pharmacyMath';
-import type { AppScreen, Medicine, PharmacyState } from '../domain/types';
+import type { AppScreen, Medicine, PharmacyState, SyncStatus } from '../domain/types';
 import { buildWhatsAppUrl } from '../utils/exportUtils';
+import { shareGeneratedReport } from '../utils/reportGenerators';
 import { PWAInstallButton } from './PWAInstallButton';
 
 interface AppShellProps {
@@ -36,6 +37,9 @@ interface AppShellProps {
   isDark: boolean;
   onToggleDark: () => void;
   isOnline: boolean;
+  syncStatus?: SyncStatus;
+  pendingChangesCount?: number;
+  onSyncNow?: () => void;
   onAddRecentSearch: (term: string) => void;
   whatsappModal: { title: string; message: string; phone?: string } | null;
   onCloseWhatsapp: () => void;
@@ -63,6 +67,7 @@ const SCREEN_TITLES: Record<AppScreen, string> = {
   invoices: 'Purchase Invoices',
   invoice_detail: 'Invoice Details',
   reports: 'Reports & Analytics',
+  export_center: 'Export & Share',
   notifications: 'Notifications',
   profile: 'Settings & Profile',
 };
@@ -75,6 +80,9 @@ export function AppShell({
   isDark,
   onToggleDark,
   isOnline,
+  syncStatus = isOnline ? 'live' : 'offline',
+  pendingChangesCount = 0,
+  onSyncNow,
   onAddRecentSearch,
   whatsappModal,
   onCloseWhatsapp,
@@ -195,6 +203,7 @@ export function AppShell({
       matchScreens: ['invoices', 'invoice_detail'],
     },
     { id: 'reports', label: 'Reports', icon: BarChart3, matchScreens: ['reports'] },
+    { id: 'export_center', label: 'Export & Share', icon: Share2, matchScreens: ['export_center'] },
     { id: 'notifications', label: 'Alerts', icon: Bell, matchScreens: ['notifications'] },
     { id: 'profile', label: 'Profile & Settings', icon: User, matchScreens: ['profile'] },
   ];
@@ -277,7 +286,14 @@ export function AppShell({
                 {state.user.storeName}
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                {state.user.role === 'owner' ? 'Owner' : 'Staff'} · {isOnline ? 'Synced' : 'Offline Mode'}
+                {state.user.role === 'owner' ? 'Owner' : 'Staff'} ·{' '}
+                {syncStatus === 'live'
+                  ? 'Live Sync'
+                  : syncStatus === 'syncing'
+                    ? 'Syncing...'
+                    : syncStatus === 'offline'
+                      ? 'Offline Mode'
+                      : 'Retry Sync'}
               </p>
             </div>
           </button>
@@ -286,10 +302,11 @@ export function AppShell({
 
       {/* Main Column */}
       <div className="flex-1 flex flex-col min-w-0 lg:pl-64">
-        {/* Top Bar (Compact 52px mobile / 64px desktop) */}
-        <header className="sticky top-0 z-20 h-14 lg:h-16 bg-white/95 dark:bg-[#101A1D]/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 px-4 lg:px-8 flex items-center justify-between gap-4 no-print">
+        {/* Top Bar (Edge-to-edge safe area aware for Android) */}
+        <header className="sticky top-0 z-20 pt-safe bg-white/95 dark:bg-[#101A1D]/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 px-3 sm:px-4 lg:px-8 no-print">
+          <div className="min-h-14 lg:min-h-16 flex items-center justify-between gap-2 sm:gap-4">
           {/* Left: Page Title / Brand on mobile */}
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-2.5 min-w-0">
             <button
               type="button"
               onClick={() => onNavigate('home')}
@@ -300,9 +317,40 @@ export function AppShell({
                 <path d="M12 5v14M5 12h14" strokeLinecap="round" />
               </svg>
             </button>
-            <h1 className="font-display text-base lg:text-lg font-bold text-slate-900 dark:text-white truncate">
-              {SCREEN_TITLES[screen]}
-            </h1>
+            <div className="min-w-0">
+              <h1 className="font-display text-sm sm:text-base lg:text-lg font-bold text-slate-900 dark:text-white truncate">
+                {SCREEN_TITLES[screen]}
+              </h1>
+              <button
+                type="button"
+                onClick={() => onSyncNow?.()}
+                className="lg:hidden flex items-center gap-1.5 text-[10px] font-medium text-slate-500 dark:text-slate-400"
+                title="Real-time sync status"
+              >
+                <span
+                  className={`inline-block h-1.5 w-1.5 rounded-full ${
+                    syncStatus === 'live'
+                      ? 'bg-emerald-500'
+                      : syncStatus === 'syncing'
+                        ? 'bg-teal-500 animate-pulse'
+                        : syncStatus === 'offline'
+                          ? 'bg-amber-500'
+                          : 'bg-rose-500'
+                  }`}
+                />
+                <span>
+                  {syncStatus === 'live'
+                    ? 'Synced Live'
+                    : syncStatus === 'syncing'
+                      ? 'Syncing...'
+                      : syncStatus === 'offline'
+                        ? pendingChangesCount > 0
+                          ? `Offline (${pendingChangesCount} queued)`
+                          : 'Offline'
+                        : 'Tap to Retry Sync'}
+                </span>
+              </button>
+            </div>
           </div>
 
           {/* Center: Global Search Trigger */}
@@ -366,6 +414,7 @@ export function AppShell({
               <span>Scan Bill</span>
             </button>
           </div>
+          </div>
         </header>
 
         {/* Offline Status Notice */}
@@ -374,12 +423,12 @@ export function AppShell({
             role="status"
             className="bg-amber-600 text-white text-xs font-medium px-4 py-2 text-center no-print"
           >
-            Offline Mode — Inventory changes are saved locally and will sync automatically when internet returns.
+            Offline Mode — {pendingChangesCount > 0 ? `${pendingChangesCount} change(s) queued locally` : 'Inventory changes are saved locally'} and will sync automatically when internet returns.
           </div>
         )}
 
         {/* Main Scrollable Viewport */}
-        <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 lg:py-7 pb-24 lg:pb-10">
+        <main className="flex-1 w-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-5 lg:py-7 pb-28 lg:pb-10">
           {children}
         </main>
       </div>
@@ -423,7 +472,7 @@ export function AppShell({
           <MobileTabButton
             label="Reports"
             icon={BarChart3}
-            active={['reports', 'invoices', 'invoice_detail', 'distributors', 'distributor_detail'].includes(screen)}
+            active={['reports', 'export_center', 'invoices', 'invoice_detail', 'distributors', 'distributor_detail'].includes(screen)}
             onClick={() => onNavigate('reports')}
           />
           <MobileTabButton
@@ -438,12 +487,12 @@ export function AppShell({
       {/* Global Smart Search Modal (with Voice Search & Recent Searches) */}
       {searchOpen && (
         <div
-          className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-xs flex items-start justify-center p-4 pt-12 sm:pt-20"
+          className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-xs flex items-start justify-center p-3 sm:p-4 pt-safe sm:pt-20 overflow-y-auto"
           role="dialog"
           aria-modal="true"
           aria-label="Global Medicine Search"
         >
-          <div className="w-full max-w-2xl bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden">
+          <div className="w-full max-w-2xl max-h-[88dvh] flex flex-col bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden mt-4 sm:mt-0">
             <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 dark:border-slate-800">
               <Search className="w-5 h-5 text-slate-400 shrink-0" />
               <input
@@ -575,12 +624,12 @@ export function AppShell({
       {/* Barcode Stock Lookup Modal */}
       {barcodeOpen && (
         <div
-          className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
           role="dialog"
           aria-modal="true"
           aria-label="Barcode Stock Lookup"
         >
-          <div className="w-full max-w-md bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-4">
+          <div className="w-full max-w-md max-h-[90dvh] overflow-y-auto bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-5 sm:p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="font-display text-lg font-bold text-slate-900 dark:text-white">
                 Barcode Stock Lookup
@@ -673,16 +722,16 @@ export function AppShell({
       {/* WhatsApp Share Modal (avoids window.open while supporting direct WhatsApp deep link + clipboard copy) */}
       {whatsappModal && (
         <div
-          className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
           role="dialog"
           aria-modal="true"
           aria-label="Share on WhatsApp"
         >
-          <div className="w-full max-w-lg bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <Share2 className="w-5 h-5 text-emerald-600" />
-                <h2 className="font-display text-lg font-bold text-slate-900 dark:text-white">
+          <div className="w-full max-w-lg max-h-[90dvh] overflow-y-auto bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-5 sm:p-6 space-y-4">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Share2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                <h2 className="font-display text-base sm:text-lg font-bold text-slate-900 dark:text-white truncate">
                   {whatsappModal.title}
                 </h2>
               </div>
@@ -690,15 +739,18 @@ export function AppShell({
                 type="button"
                 onClick={onCloseWhatsapp}
                 aria-label="Close WhatsApp share dialog"
-                className="min-h-[40px] min-w-[40px] rounded-xl flex items-center justify-center text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="min-h-[40px] min-w-[40px] rounded-xl flex items-center justify-center text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <pre className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-mono-num text-slate-700 dark:text-slate-300 whitespace-pre-wrap max-h-64 overflow-y-auto">
+            <pre className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-sans leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words max-h-60 overflow-y-auto">
               {whatsappModal.message}
             </pre>
-            <div className="flex flex-wrap items-center justify-end gap-3">
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Review the formatted summary above. Tap Open WhatsApp or Share Sheet to pick a recipient and send.
+            </p>
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => {
@@ -706,16 +758,29 @@ export function AppShell({
                   setCopiedWhatsapp(true);
                   setTimeout(() => setCopiedWhatsapp(false), 2000);
                 }}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="inline-flex flex-1 sm:flex-initial items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 {copiedWhatsapp ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                <span>{copiedWhatsapp ? 'Copied' : 'Copy Message'}</span>
+                <span>{copiedWhatsapp ? 'Copied' : 'Copy'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void shareGeneratedReport({
+                    title: whatsappModal.title,
+                    text: whatsappModal.message,
+                  });
+                }}
+                className="inline-flex flex-1 sm:flex-initial items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-teal-200 dark:border-teal-800 bg-teal-50 dark:bg-teal-950/50 text-xs sm:text-sm font-medium text-teal-800 dark:text-teal-300 hover:bg-teal-100"
+              >
+                <Share2 className="w-4 h-4" />
+                <span>Share Sheet</span>
               </button>
               <a
                 href={buildWhatsAppUrl(whatsappModal.message, whatsappModal.phone)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition-colors"
+                className="inline-flex w-full sm:w-auto items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition-colors"
               >
                 <Share2 className="w-4 h-4" />
                 <span>Open WhatsApp</span>
