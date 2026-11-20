@@ -35,6 +35,7 @@ import {
 import { ExportShareCenter } from './components/ExportShareCenter';
 import type { AppScreen, InvoiceDraft } from './domain/types';
 import { usePharmacyStore } from './store/usePharmacyStore';
+import { syncAndroidSystemBarTheme } from './utils/androidSafeArea';
 
 function getInitialScreen(): AppScreen {
   if (typeof window === 'undefined') return 'home';
@@ -91,6 +92,10 @@ export default function App() {
     const t = setTimeout(() => setToast(null), 4500);
     return () => clearTimeout(t);
   }, [toast]);
+
+  useEffect(() => {
+    syncAndroidSystemBarTheme(store.isDark);
+  }, [store.isDark]);
 
   const navigate = useCallback((nextScreen: AppScreen, entityId?: string) => {
     setScreen(nextScreen);

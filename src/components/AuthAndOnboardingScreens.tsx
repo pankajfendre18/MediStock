@@ -11,7 +11,7 @@ import type { UserProfile, UserRole } from '../domain/types';
 
 export function SplashScreen({ onContinue }: { onContinue: () => void }) {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-6 bg-gradient-to-br from-teal-900 via-teal-800 to-emerald-900 text-white">
+    <div className="min-h-dvh pt-safe pb-safe pl-safe pr-safe flex flex-col items-center justify-center px-6 bg-gradient-to-br from-teal-900 via-teal-800 to-emerald-900 text-white">
       <div className="max-w-md w-full text-center space-y-6">
         <div className="w-20 h-20 mx-auto rounded-3xl bg-white/15 backdrop-blur-md border border-white/20 flex items-center justify-center shadow-xl">
           <svg viewBox="0 0 24 24" className="w-11 h-11 text-white" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -90,7 +90,7 @@ export function OnboardingScreen({
   const Icon = current.icon;
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-10 bg-slate-50 dark:bg-[#0B1214]">
+    <div className="min-h-dvh pt-safe pb-safe pl-safe pr-safe flex items-center justify-center px-4 py-10 bg-slate-50 dark:bg-[#0B1214]">
       <div className="w-full max-w-xl bg-white dark:bg-[#111B1E] border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-10 shadow-sm space-y-8">
         <div className="flex items-center justify-between">
           <span className="font-display font-bold text-teal-700 dark:text-teal-400 text-base">
@@ -215,7 +215,7 @@ export function AuthScreen({
   };
 
   return (
-    <div className="min-h-screen grid lg:grid-cols-2 bg-slate-50 dark:bg-[#0B1214]">
+    <div className="min-h-dvh pt-safe pb-safe pl-safe pr-safe grid lg:grid-cols-2 bg-slate-50 dark:bg-[#0B1214]">
       {/* Left Brand Panel */}
       <div className="hidden lg:flex flex-col justify-between p-12 bg-gradient-to-br from-teal-900 via-teal-800 to-emerald-900 text-white">
         <div className="flex items-center gap-3">

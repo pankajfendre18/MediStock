@@ -120,11 +120,14 @@ jobs:
           }
           EOF
 
-      - name: Sync web assets and add Android permissions
+      - name: Sync web assets, permissions, and Android 15/16 edge-to-edge safe-area support
         run: |
           npx cap sync android
           node << 'EOF'
           const fs = require('fs');
+          const path = require('path');
+
+          // 1. Add camera/audio permissions and keyboard adjustResize to AndroidManifest.xml
           const manifestPath = 'android/app/src/main/AndroidManifest.xml';
           let xml = fs.readFileSync(manifestPath, 'utf8');
           const perms = [
@@ -138,7 +141,114 @@ jobs:
               xml = xml.replace(anchor, `${anchor}\n${perm}`);
             }
           }
+          if (!xml.includes('android:windowSoftInputMode')) {
+            xml = xml.replace(
+              '<activity',
+              '<activity\n            android:windowSoftInputMode="adjustResize"'
+            );
+          }
           fs.writeFileSync(manifestPath, xml);
+
+          // 2. Patch MainActivity.java to enforce exact Android 15/16 WindowInsets (status bar + display cutout / Atomic Island + gesture bar + IME keyboard)
+          const mainActivityPath = path.join(
+            'android',
+            'app',
+            'src',
+            'main',
+            'java',
+            'in',
+            'medistock',
+            'ai',
+            'pharmacy',
+            'MainActivity.java'
+          );
+          const mainActivityJava = `package in.medistock.ai.pharmacy;
+
+          import android.graphics.Color;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.view.View;
+          import android.view.WindowManager;
+          import android.webkit.JavascriptInterface;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import androidx.core.graphics.Insets;
+          import androidx.core.view.ViewCompat;
+          import androidx.core.view.WindowCompat;
+          import androidx.core.view.WindowInsetsCompat;
+          import androidx.core.view.WindowInsetsControllerCompat;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+              private View rootContentView;
+
+              @Override
+              public void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+
+                  WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                      WindowManager.LayoutParams lp = getWindow().getAttributes();
+                      lp.layoutInDisplayCutoutMode =
+                          WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+                      getWindow().setAttributes(lp);
+                  }
+
+                  getWindow().setStatusBarColor(Color.TRANSPARENT);
+                  getWindow().setNavigationBarColor(Color.TRANSPARENT);
+
+                  rootContentView = findViewById(android.R.id.content);
+                  applySystemBarTheme(false);
+
+                  if (rootContentView != null) {
+                      ViewCompat.setOnApplyWindowInsetsListener(rootContentView, (view, windowInsets) -> {
+                          Insets bars = windowInsets.getInsets(
+                              WindowInsetsCompat.Type.systemBars()
+                                  | WindowInsetsCompat.Type.displayCutout()
+                                  | WindowInsetsCompat.Type.ime()
+                          );
+                          view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+                          return WindowInsetsCompat.CONSUMED;
+                      });
+                      ViewCompat.requestApplyInsets(rootContentView);
+                  }
+
+                  if (getBridge() != null && getBridge().getWebView() != null) {
+                      WebView webView = getBridge().getWebView();
+                      WebSettings settings = webView.getSettings();
+                      String ua = settings.getUserAgentString();
+                      if (ua != null && !ua.contains("MediStockNativeInsets")) {
+                          settings.setUserAgentString(ua + " MediStockNativeInsets/1");
+                      }
+                      webView.addJavascriptInterface(new MediStockThemeBridge(), "MediStockAndroid");
+                  }
+              }
+
+              private void applySystemBarTheme(boolean isDark) {
+                  int bgColor = Color.parseColor(isDark ? "#101A1D" : "#FFFFFF");
+                  if (rootContentView != null) {
+                      rootContentView.setBackgroundColor(bgColor);
+                  }
+                  WindowInsetsControllerCompat controller =
+                      WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+                  if (controller != null) {
+                      controller.setAppearanceLightStatusBars(!isDark);
+                      controller.setAppearanceLightNavigationBars(!isDark);
+                  }
+              }
+
+              private class MediStockThemeBridge {
+                  @JavascriptInterface
+                  public void setDarkMode(final boolean isDark) {
+                      runOnUiThread(() -> applySystemBarTheme(isDark));
+                  }
+              }
+          }
+          `.replace(/^          /gm, '');
+
+          fs.mkdirSync(path.dirname(mainActivityPath), { recursive: true });
+          fs.writeFileSync(mainActivityPath, mainActivityJava);
+          console.log('Patched MainActivity.java with native Android 15/16 WindowInsetsCompat support.');
           EOF
 
       - name: Accept Android SDK licenses & compile APK

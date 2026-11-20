@@ -303,8 +303,8 @@ export function AppShell({
       {/* Main Column */}
       <div className="flex-1 flex flex-col min-w-0 lg:pl-64">
         {/* Top Bar (Edge-to-edge safe area aware for Android) */}
-        <header className="sticky top-0 z-20 pt-safe bg-white/95 dark:bg-[#101A1D]/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 px-3 sm:px-4 lg:px-8 no-print">
-          <div className="min-h-14 lg:min-h-16 flex items-center justify-between gap-2 sm:gap-4">
+        <header className="sticky top-0 z-20 pt-safe pl-safe pr-safe bg-white/95 dark:bg-[#101A1D]/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 no-print">
+          <div className="min-h-14 lg:min-h-16 px-3 sm:px-4 lg:px-8 flex items-center justify-between gap-2 sm:gap-4">
           {/* Left: Page Title / Brand on mobile */}
           <div className="flex items-center gap-2.5 min-w-0">
             <button
@@ -428,17 +428,17 @@ export function AppShell({
         )}
 
         {/* Main Scrollable Viewport */}
-        <main className="flex-1 w-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-5 lg:py-7 pb-28 lg:pb-10">
-          {children}
+        <main className="flex-1 w-full max-w-7xl mx-auto pl-safe pr-safe pb-nav-safe lg:pb-10">
+          <div className="px-3 sm:px-6 lg:px-8 py-4 sm:py-5 lg:py-7">{children}</div>
         </main>
       </div>
 
       {/* Mobile Fixed 5-Tab Bottom Navigation Bar (Home, Inventory, prominent SCAN, Reports, Profile) */}
       <nav
         aria-label="Mobile Navigation"
-        className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 dark:bg-[#101A1D]/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 pb-safe no-print"
+        className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 dark:bg-[#101A1D]/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 pb-safe pl-safe pr-safe no-print"
       >
-        <div className="grid grid-cols-5 items-end h-[62px] px-1">
+        <div className="grid grid-cols-5 items-end h-[64px] px-1 pb-1">
           <MobileTabButton
             label="Home"
             icon={Home}
