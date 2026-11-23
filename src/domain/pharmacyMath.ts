@@ -7,7 +7,7 @@ import type {
   MedicineBatch,
   PharmacyState,
   PurchaseInvoice,
-} from './types';
+} from './types.ts';
 
 export function round2(value: number): number {
   if (!Number.isFinite(value)) return 0;

@@ -1,4 +1,4 @@
-import { normalizeGstin, normalizeKey } from './pharmacyMath';
+import { normalizeGstin, normalizeKey } from './pharmacyMath.ts';
 import type {
   AuditLogEntry,
   Distributor,
@@ -8,7 +8,7 @@ import type {
   PurchaseInvoice,
   PurchaseReturn,
   StockHistoryEvent,
-} from './types';
+} from './types.ts';
 
 export interface SyncEnvelope {
   state: PharmacyState;

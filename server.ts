@@ -5,8 +5,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
-import { mergePharmacyStates } from './src/domain/syncMerge';
-import type { PharmacyState } from './src/domain/types';
+import { mergePharmacyStates } from './src/domain/syncMerge.ts';
+import type { PharmacyState } from './src/domain/types.ts';
 
 dotenv.config();
 
@@ -392,7 +392,10 @@ STRICT ACCURACY & SAFETY RULES:
 });
 
 async function startServer() {
-  const isProd = process.env.NODE_ENV === 'production';
+  const distDir = path.resolve(__dirname, 'dist');
+  const isProd =
+    process.env.NODE_ENV === 'production' ||
+    (Boolean(process.env.K_SERVICE) && fs.existsSync(path.join(distDir, 'index.html')));
   const httpServer = http.createServer(app);
 
   if (!isProd) {
@@ -407,7 +410,6 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distDir = path.resolve(__dirname, 'dist');
     app.get('/manifest.webmanifest', (_req, res, next) => {
       const manifestPath = path.join(distDir, 'manifest.webmanifest');
       if (fs.existsSync(manifestPath)) {
