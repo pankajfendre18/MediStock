@@ -30,10 +30,63 @@
     font-variant-numeric: tabular-nums;
   }
 
+  a[href] {
+    display: inline-flex;
+    align-items: center;
+  }
+
   input, select, textarea {
     scroll-margin-bottom: 140px;
     scroll-margin-top: 90px;
   }
+}
+
+/* Enforce minimum 48x48px touch target size across all interactive elements (Material 3 / WCAG AAA) */
+button:not(.sr-only),
+a[href]:not(.sr-only),
+[role="button"]:not(.sr-only),
+[role="tab"]:not(.sr-only),
+[role="menuitem"]:not(.sr-only),
+[role="switch"]:not(.sr-only),
+summary:not(.sr-only),
+select:not(.sr-only),
+textarea:not(.sr-only),
+input:not([type="hidden"]):not([type="file"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.sr-only) {
+  min-width: 48px;
+  min-height: 48px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Ensure checkboxes, radios, and range sliders meet 48x48px touch targets without visual distortion */
+label:has(input[type="checkbox"]),
+label:has(input[type="radio"]) {
+  min-width: 48px;
+  min-height: 48px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  position: relative;
+  touch-action: manipulation;
+}
+
+input[type="checkbox"]::after,
+input[type="radio"]::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 48px;
+  min-height: 48px;
+}
+
+input[type="range"] {
+  min-height: 48px;
+  touch-action: manipulation;
 }
 
 .tabular-nums {

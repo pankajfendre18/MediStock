@@ -304,31 +304,33 @@ export function AppShell({
       <div className="flex-1 flex flex-col min-w-0 lg:pl-64">
         {/* Top Bar (Edge-to-edge safe area aware for Android) */}
         <header className="sticky top-0 z-20 pt-safe pl-safe pr-safe bg-white/95 dark:bg-[#101A1D]/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 no-print">
-          <div className="min-h-14 lg:min-h-16 px-3 sm:px-4 lg:px-8 flex items-center justify-between gap-2 sm:gap-4">
+          <div className="min-h-14 lg:min-h-16 px-2 sm:px-4 lg:px-8 flex items-center justify-between gap-1 sm:gap-4">
           {/* Left: Page Title / Brand on mobile */}
-          <div className="flex items-center gap-2.5 min-w-0">
+          <div className="flex items-center gap-1 sm:gap-2.5 min-w-0">
             <button
               type="button"
               onClick={() => onNavigate('home')}
-              className="lg:hidden w-8 h-8 rounded-lg bg-teal-700 text-white flex items-center justify-center shrink-0"
+              className="lg:hidden flex items-center justify-center rounded-xl shrink-0"
               aria-label="Go to Dashboard"
             >
-              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.4">
-                <path d="M12 5v14M5 12h14" strokeLinecap="round" />
-              </svg>
+              <span className="w-8 h-8 rounded-lg bg-teal-700 text-white flex items-center justify-center">
+                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.4">
+                  <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+                </svg>
+              </span>
             </button>
-            <div className="min-w-0">
-              <h1 className="font-display text-sm sm:text-base lg:text-lg font-bold text-slate-900 dark:text-white truncate">
+            <button
+              type="button"
+              onClick={() => onSyncNow?.()}
+              className="lg:hidden min-w-0 flex flex-col justify-center text-left py-1 pr-1"
+              title="Tap to sync now"
+            >
+              <span className="font-display text-sm font-bold text-slate-900 dark:text-white truncate leading-tight">
                 {SCREEN_TITLES[screen]}
-              </h1>
-              <button
-                type="button"
-                onClick={() => onSyncNow?.()}
-                className="lg:hidden flex items-center gap-1.5 text-[10px] font-medium text-slate-500 dark:text-slate-400"
-                title="Real-time sync status"
-              >
+              </span>
+              <span className="flex items-center gap-1.5 text-[10px] font-medium text-slate-500 dark:text-slate-400 leading-tight mt-0.5 truncate">
                 <span
-                  className={`inline-block h-1.5 w-1.5 rounded-full ${
+                  className={`inline-block h-1.5 w-1.5 rounded-full shrink-0 ${
                     syncStatus === 'live'
                       ? 'bg-emerald-500'
                       : syncStatus === 'syncing'
@@ -338,19 +340,22 @@ export function AppShell({
                           : 'bg-rose-500'
                   }`}
                 />
-                <span>
+                <span className="truncate">
                   {syncStatus === 'live'
                     ? 'Synced Live'
                     : syncStatus === 'syncing'
                       ? 'Syncing...'
                       : syncStatus === 'offline'
                         ? pendingChangesCount > 0
-                          ? `Offline (${pendingChangesCount} queued)`
+                          ? `Offline (${pendingChangesCount})`
                           : 'Offline'
-                        : 'Tap to Retry Sync'}
+                        : 'Tap to Retry'}
                 </span>
-              </button>
-            </div>
+              </span>
+            </button>
+            <h1 className="hidden lg:block font-display text-lg font-bold text-slate-900 dark:text-white truncate">
+              {SCREEN_TITLES[screen]}
+            </h1>
           </div>
 
           {/* Center: Global Search Trigger */}
@@ -358,7 +363,7 @@ export function AppShell({
             type="button"
             onClick={() => setSearchOpen(true)}
             aria-label="Search medicines, batches, or barcodes"
-            className="hidden sm:flex items-center gap-2.5 flex-1 max-w-md h-10 px-3.5 rounded-xl bg-slate-100/90 hover:bg-slate-200/70 dark:bg-slate-800/80 dark:hover:bg-slate-800 text-sm text-slate-500 dark:text-slate-400 transition-colors text-left"
+            className="hidden sm:flex items-center gap-2.5 flex-1 max-w-md h-12 px-3.5 rounded-xl bg-slate-100/90 hover:bg-slate-200/70 dark:bg-slate-800/80 dark:hover:bg-slate-800 text-sm text-slate-500 dark:text-slate-400 transition-colors text-left"
           >
             <Search className="w-4 h-4 shrink-0" />
             <span className="truncate flex-1">Search medicine, salt, batch or barcode...</span>
@@ -366,12 +371,12 @@ export function AppShell({
           </button>
 
           {/* Right: Contextual Utility Controls + 1 Primary CTA */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <div className="flex items-center gap-0.5 sm:gap-1.5 shrink-0">
             <button
               type="button"
               onClick={() => setSearchOpen(true)}
               aria-label="Open global medicine search"
-              className="sm:hidden min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+              className="sm:hidden flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
             >
               <Search className="w-5 h-5" />
             </button>
@@ -379,7 +384,7 @@ export function AppShell({
               type="button"
               onClick={() => setBarcodeOpen(true)}
               aria-label="Barcode stock lookup"
-              className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              className="flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
               title="Barcode Lookup"
             >
               <Barcode className="w-[19px] h-[19px]" />
@@ -388,7 +393,7 @@ export function AppShell({
               type="button"
               onClick={onToggleDark}
               aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-              className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              className="flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               {isDark ? <Sun className="w-[19px] h-[19px]" /> : <Moon className="w-[19px] h-[19px]" />}
             </button>
@@ -396,7 +401,7 @@ export function AppShell({
               type="button"
               onClick={() => onNavigate('notifications')}
               aria-label={`Notifications (${unreadNotifications} unread)`}
-              className="relative min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              className="relative flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               <Bell className="w-[19px] h-[19px]" />
               {unreadNotifications > 0 && (
@@ -408,7 +413,7 @@ export function AppShell({
             <button
               type="button"
               onClick={() => onNavigate('scanner')}
-              className="hidden sm:inline-flex items-center gap-2 h-10 px-4 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold transition-colors whitespace-nowrap shrink-0"
+              className="hidden sm:inline-flex items-center gap-2 h-12 px-4 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold transition-colors whitespace-nowrap shrink-0"
             >
               <Camera className="w-4 h-4 shrink-0" />
               <span>Scan Bill</span>
