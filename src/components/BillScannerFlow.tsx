@@ -512,10 +512,10 @@ export function BillScannerFlow({
           )}
         </div>
 
-        <div className="grid lg:grid-cols-12 gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-start">
           {/* Camera & Upload Surface */}
-          <div className="lg:col-span-7 bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-            <div className="relative aspect-[4/3] bg-slate-950 flex items-center justify-center overflow-hidden">
+          <div className="min-w-0 w-full lg:col-span-7 bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <div className="relative aspect-[4/3] w-full bg-slate-950 flex items-center justify-center overflow-hidden">
               {cameraActive ? (
                 <>
                   <video
@@ -525,27 +525,27 @@ export function BillScannerFlow({
                     className="w-full h-full object-cover"
                   />
                   {/* Document Boundary Alignment Frame */}
-                  <div className="pointer-events-none absolute inset-6 border-2 border-emerald-400/80 rounded-xl">
+                  <div className="pointer-events-none absolute inset-4 sm:inset-6 border-2 border-emerald-400/80 rounded-xl">
                     <span className="absolute top-2 left-3 text-xs font-medium text-emerald-200 bg-slate-950/60 px-2 py-0.5 rounded">
                       Align GST Invoice Corners
                     </span>
                   </div>
                 </>
               ) : (
-                <div className="p-8 text-center space-y-4 max-w-md">
-                  <div className="w-16 h-16 mx-auto rounded-2xl bg-teal-900/60 border border-teal-700/50 text-teal-300 flex items-center justify-center">
-                    <ScanLine className="w-8 h-8" />
+                <div className="p-5 sm:p-8 text-center space-y-3 sm:space-y-4 w-full max-w-md">
+                  <div className="w-14 h-14 sm:w-16 sm:h-16 mx-auto rounded-2xl bg-teal-900/60 border border-teal-700/50 text-teal-300 flex items-center justify-center">
+                    <ScanLine className="w-7 h-7 sm:w-8 sm:h-8" />
                   </div>
                   <div className="space-y-1.5">
-                    <h3 className="font-display text-lg font-bold text-white">
+                    <h3 className="font-display text-base sm:text-lg font-bold text-white">
                       Ready to scan purchase invoice
                     </h3>
-                    <p className="text-xs sm:text-sm text-slate-300">
+                    <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
                       Supports multi-page A4 & half-page distributor bills with printed HSN, Batch, Expiry, Free Qty, and CGST/SGST columns.
                     </p>
                   </div>
                   {cameraError && (
-                    <p className="text-xs text-amber-300 bg-amber-950/60 border border-amber-700/50 rounded-xl p-3">
+                    <p className="text-xs text-amber-300 bg-amber-950/60 border border-amber-700/50 rounded-xl p-3 break-words">
                       {cameraError}
                     </p>
                   )}
@@ -553,15 +553,15 @@ export function BillScannerFlow({
               )}
             </div>
 
-            <div className="p-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 dark:border-slate-800">
+            <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-3 border-t border-slate-200 dark:border-slate-800">
               <div className="flex flex-wrap items-center gap-2.5">
                 {!cameraActive ? (
                   <button
                     type="button"
                     onClick={startCamera}
-                    className="inline-flex items-center gap-2 h-11 px-5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold transition-colors whitespace-nowrap"
+                    className="inline-flex flex-1 sm:flex-initial items-center justify-center gap-2 px-4 sm:px-5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold transition-colors whitespace-nowrap"
                   >
-                    <Camera className="w-4 h-4" />
+                    <Camera className="w-4 h-4 shrink-0" />
                     <span>Open Camera</span>
                   </button>
                 ) : (
@@ -596,9 +596,9 @@ export function BillScannerFlow({
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="inline-flex items-center gap-2 h-11 px-4 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-medium text-slate-800 dark:text-slate-100 transition-colors whitespace-nowrap"
+                  className="inline-flex flex-1 sm:flex-initial items-center justify-center gap-2 px-4 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-medium text-slate-800 dark:text-slate-100 transition-colors whitespace-nowrap"
                 >
-                  <Upload className="w-4 h-4" />
+                  <Upload className="w-4 h-4 shrink-0" />
                   <span>Upload Bill Photos</span>
                 </button>
               </div>
@@ -606,7 +606,7 @@ export function BillScannerFlow({
               <button
                 type="button"
                 onClick={openBlankManualVerification}
-                className="text-xs font-semibold text-teal-700 dark:text-teal-400 hover:underline whitespace-nowrap"
+                className="self-start sm:self-auto text-xs font-semibold text-teal-700 dark:text-teal-400 hover:underline whitespace-nowrap px-1"
               >
                 Enter Invoice Manually
               </button>
@@ -614,13 +614,13 @@ export function BillScannerFlow({
           </div>
 
           {/* Sample Indian Distributor Invoices for Instant Testing */}
-          <div className="lg:col-span-5 space-y-4">
-            <div className="bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200 dark:border-slate-800 p-5 space-y-4">
-              <div>
+          <div className="min-w-0 w-full lg:col-span-5 space-y-4">
+            <div className="bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 space-y-4 overflow-hidden">
+              <div className="min-w-0">
                 <h3 className="font-display text-base font-bold text-slate-900 dark:text-white">
                   Test with Real Sample Distributor Bills
                 </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
                   Select a realistic Indian pharmaceutical GST tax invoice to run live Gemini Vision OCR & verification end-to-end.
                 </p>
               </div>
@@ -631,24 +631,24 @@ export function BillScannerFlow({
                     key={preset.id}
                     type="button"
                     onClick={() => handleLoadSampleInvoice(preset)}
-                    className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-teal-600 dark:hover:border-teal-500 bg-slate-50/70 dark:bg-slate-900/50 flex items-center gap-3.5 text-left transition-colors"
+                    className="w-full min-w-0 max-w-full p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-teal-600 dark:hover:border-teal-500 bg-slate-50/70 dark:bg-slate-900/50 flex items-center gap-3 text-left transition-colors overflow-hidden"
                   >
                     <img
                       src={preset.imageUrl}
                       alt={preset.title}
                       referrerPolicy="no-referrer"
-                      className="w-14 h-18 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shrink-0 bg-white"
+                      className="w-12 h-16 sm:w-14 sm:h-18 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shrink-0 bg-white"
                     />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
+                    <div className="min-w-0 flex-1 overflow-hidden">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white line-clamp-2 break-words leading-snug">
                         {preset.title}
                       </p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2 break-words">
                         {preset.subtitle}
                       </p>
                       <p className="text-xs font-semibold text-teal-700 dark:text-teal-400 mt-1.5 inline-flex items-center gap-1">
                         <span>Scan with Gemini AI</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
+                        <ArrowRight className="w-3.5 h-3.5 shrink-0" />
                       </p>
                     </div>
                   </button>
@@ -756,14 +756,14 @@ export function BillScannerFlow({
           </button>
         </div>
 
-        <div className="grid lg:grid-cols-12 gap-5 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
           {/* Document Preview Canvas */}
-          <div className="lg:col-span-8 bg-slate-900 rounded-2xl border border-slate-800 p-4 flex items-center justify-center min-h-[420px] max-h-[640px] overflow-hidden relative">
+          <div className="min-w-0 w-full lg:col-span-8 bg-slate-900 rounded-2xl border border-slate-800 p-3 sm:p-4 flex items-center justify-center min-h-[300px] sm:min-h-[420px] max-h-[640px] overflow-hidden relative">
             <img
               src={activePage.processedDataUrl}
               alt={`Invoice preview page ${activePageIndex + 1}`}
               referrerPolicy="no-referrer"
-              className="max-h-[580px] w-auto object-contain rounded-lg shadow-lg"
+              className="max-h-[580px] max-w-full w-auto object-contain rounded-lg shadow-lg"
             />
             {isEnhancing && (
               <div className="absolute inset-0 bg-slate-950/60 flex items-center justify-center">
@@ -773,8 +773,8 @@ export function BillScannerFlow({
           </div>
 
           {/* Controls Panel */}
-          <div className="lg:col-span-4 space-y-4">
-            <div className="bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200 dark:border-slate-800 p-5 space-y-5">
+          <div className="min-w-0 w-full lg:col-span-4 space-y-4">
+            <div className="bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 space-y-5">
               <div>
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-2.5">
                   <Crop className="w-4 h-4 text-teal-700 dark:text-teal-400" />

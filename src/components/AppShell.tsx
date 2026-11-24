@@ -492,27 +492,34 @@ export function AppShell({
       {/* Global Smart Search Modal (with Voice Search & Recent Searches) */}
       {searchOpen && (
         <div
-          className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-xs flex items-start justify-center p-3 sm:p-4 pt-safe sm:pt-20 overflow-y-auto"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setSearchOpen(false);
+              setVoiceFeedback(null);
+            }
+          }}
+          className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-xs flex items-start justify-center p-2 sm:p-4 pt-safe pb-safe pl-safe pr-safe sm:pt-16"
           role="dialog"
           aria-modal="true"
           aria-label="Global Medicine Search"
         >
-          <div className="w-full max-w-2xl max-h-[88dvh] flex flex-col bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden mt-4 sm:mt-0">
-            <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 dark:border-slate-800">
+          <div className="w-full max-w-2xl max-h-[calc(100dvh-1rem-var(--safe-top)-var(--safe-bottom))] sm:max-h-[82dvh] flex flex-col bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden">
+            {/* Sticky Search Input Row */}
+            <div className="shrink-0 flex items-center gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 border-b border-slate-200 dark:border-slate-800">
               <Search className="w-5 h-5 text-slate-400 shrink-0" />
               <input
                 type="text"
                 autoFocus
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search medicine name, generic salt, brand, batch, or barcode..."
-                className="flex-1 bg-transparent text-sm sm:text-base text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none"
+                placeholder="Search medicine, salt, batch, barcode..."
+                className="flex-1 min-w-0 bg-transparent text-sm sm:text-base text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none"
               />
               <button
                 type="button"
                 onClick={startVoiceSearch}
                 aria-label="Voice search medicines"
-                className={`min-h-[40px] min-w-[40px] rounded-xl flex items-center justify-center transition-colors ${
+                className={`rounded-xl flex items-center justify-center shrink-0 transition-colors ${
                   isListening
                     ? 'bg-red-600 text-white'
                     : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -527,100 +534,103 @@ export function AppShell({
                   setVoiceFeedback(null);
                 }}
                 aria-label="Close search"
-                className="min-h-[40px] min-w-[40px] rounded-xl flex items-center justify-center text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="rounded-xl flex items-center justify-center shrink-0 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {voiceFeedback && (
-              <div className="px-4 py-2 bg-teal-50 dark:bg-teal-950/40 text-xs text-teal-800 dark:text-teal-200 border-b border-teal-100 dark:border-teal-900">
+              <div className="shrink-0 px-4 py-2 bg-teal-50 dark:bg-teal-950/40 text-xs text-teal-800 dark:text-teal-200 border-b border-teal-100 dark:border-teal-900">
                 {voiceFeedback}
               </div>
             )}
 
-            {!searchQuery.trim() && state.recentSearches.length > 0 && (
-              <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800/80">
-                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">
-                  Recent Searches
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {state.recentSearches.map((term) => (
-                    <button
-                      key={term}
-                      type="button"
-                      onClick={() => setSearchQuery(term)}
-                      className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 transition-colors"
-                    >
-                      {term}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="max-h-96 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/80">
-              {searchResults.length === 0 ? (
-                <div className="p-8 text-center">
-                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                    No medicines matched "{searchQuery}"
+            {/* Unified Scrollable Body (Recent Searches + Results scroll smoothly above keyboard) */}
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+              {!searchQuery.trim() && state.recentSearches.length > 0 && (
+                <div className="px-3 sm:px-4 py-2.5 border-b border-slate-100 dark:border-slate-800/80">
+                  <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1.5">
+                    Recent Searches
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSearchOpen(false);
-                      onNavigate('medicine_form');
-                    }}
-                    className="mt-3 px-4 py-2 rounded-xl bg-teal-700 text-white text-xs font-semibold hover:bg-teal-800"
-                  >
-                    Add New Medicine
-                  </button>
+                  <div className="flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
+                    {state.recentSearches.map((term) => (
+                      <button
+                        key={term}
+                        type="button"
+                        onClick={() => setSearchQuery(term)}
+                        className="shrink-0 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 transition-colors whitespace-nowrap"
+                      >
+                        {term}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              ) : (
-                searchResults.map((med) => {
-                  const sellable = getMedicineSellableStock(med);
-                  const latestBatch = med.batches[0];
-                  return (
+              )}
+
+              <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                {searchResults.length === 0 ? (
+                  <div className="p-6 sm:p-8 text-center">
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                      No medicines matched "{searchQuery}"
+                    </p>
                     <button
-                      key={med.id}
                       type="button"
                       onClick={() => {
-                        if (searchQuery.trim()) onAddRecentSearch(searchQuery.trim());
                         setSearchOpen(false);
-                        onNavigate('medicine_detail', med.id);
+                        onNavigate('medicine_form');
                       }}
-                      className="w-full px-4 py-3 flex items-center justify-between gap-4 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors text-left"
+                      className="mt-3 px-4 py-2 rounded-xl bg-teal-700 text-white text-xs font-semibold hover:bg-teal-800"
                     >
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
-                          {med.name}
-                        </p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                          {med.genericName} · {med.manufacturer} · {med.batches.length} batch(es)
-                        </p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p
-                          className={`font-mono-num text-sm font-semibold ${
-                            sellable === 0
-                              ? 'text-red-600 dark:text-red-400'
-                              : sellable < med.minStockLevel
-                                ? 'text-amber-600 dark:text-amber-400'
-                                : 'text-emerald-700 dark:text-emerald-400'
-                          }`}
-                        >
-                          {sellable} in stock
-                        </p>
-                        {latestBatch && (
-                          <p className="font-mono-num text-xs text-slate-500 dark:text-slate-400">
-                            MRP {formatINR(latestBatch.mrp)}
-                          </p>
-                        )}
-                      </div>
+                      Add New Medicine
                     </button>
-                  );
-                })
-              )}
+                  </div>
+                ) : (
+                  searchResults.map((med) => {
+                    const sellable = getMedicineSellableStock(med);
+                    const latestBatch = med.batches[0];
+                    return (
+                      <button
+                        key={med.id}
+                        type="button"
+                        onClick={() => {
+                          if (searchQuery.trim()) onAddRecentSearch(searchQuery.trim());
+                          setSearchOpen(false);
+                          onNavigate('medicine_detail', med.id);
+                        }}
+                        className="w-full px-3 sm:px-4 py-3 flex items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors text-left"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
+                            {med.name}
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                            {med.genericName} · {med.manufacturer} · {med.batches.length} batch(es)
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p
+                            className={`font-mono-num text-sm font-semibold ${
+                              sellable === 0
+                                ? 'text-red-600 dark:text-red-400'
+                                : sellable < med.minStockLevel
+                                  ? 'text-amber-600 dark:text-amber-400'
+                                  : 'text-emerald-700 dark:text-emerald-400'
+                            }`}
+                          >
+                            {sellable} in stock
+                          </p>
+                          {latestBatch && (
+                            <p className="font-mono-num text-xs text-slate-500 dark:text-slate-400">
+                              MRP {formatINR(latestBatch.mrp)}
+                            </p>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -629,97 +639,105 @@ export function AppShell({
       {/* Barcode Stock Lookup Modal */}
       {barcodeOpen && (
         <div
-          className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setBarcodeOpen(false);
+          }}
+          className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-xs flex items-start sm:items-center justify-center p-2 sm:p-4 pt-safe pb-safe pl-safe pr-safe"
           role="dialog"
           aria-modal="true"
           aria-label="Barcode Stock Lookup"
         >
-          <div className="w-full max-w-md max-h-[90dvh] overflow-y-auto bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-5 sm:p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="font-display text-lg font-bold text-slate-900 dark:text-white">
+          <div className="w-full max-w-md max-h-[calc(100dvh-1rem-var(--safe-top)-var(--safe-bottom))] sm:max-h-[88dvh] flex flex-col bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden">
+            {/* Sticky Header — never clipped above scroll top when keyboard opens */}
+            <div className="shrink-0 flex items-center justify-between gap-2 px-4 sm:px-5 py-2.5 sm:py-3 border-b border-slate-100 dark:border-slate-800">
+              <h2 className="font-display text-base sm:text-lg font-bold text-slate-900 dark:text-white truncate">
                 Barcode Stock Lookup
               </h2>
               <button
                 type="button"
                 onClick={() => setBarcodeOpen(false)}
                 aria-label="Close barcode lookup"
-                className="min-h-[40px] min-w-[40px] rounded-xl flex items-center justify-center text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="rounded-xl flex items-center justify-center shrink-0 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <p className="text-sm text-slate-600 dark:text-slate-400">
-              Scan a medicine strip barcode using a USB/Bluetooth scanner or enter the EAN-13 barcode / batch number below.
-            </p>
-            <div>
-              <label htmlFor="barcode-lookup-input" className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
-                Barcode or Batch Number
-              </label>
-              <input
-                id="barcode-lookup-input"
-                type="text"
-                autoFocus
-                value={barcodeInput}
-                onChange={(e) => setBarcodeInput(e.target.value)}
-                placeholder="e.g. 8906000410650 or DL2608A"
-                className="w-full h-11 px-3.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-mono-num text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-600"
-              />
-            </div>
 
-            <div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-                Quick test barcodes from your shelf:
+            {/* Scrollable Body */}
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-5 space-y-3.5">
+              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                Scan a medicine strip barcode using a USB/Bluetooth scanner or enter the EAN-13 barcode / batch number below.
               </p>
-              <div className="flex flex-wrap gap-1.5">
-                {state.medicines.slice(0, 4).map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setBarcodeInput(m.barcode)}
-                    className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-mono-num text-slate-700 dark:text-slate-200"
-                  >
-                    {m.name.split(' ')[0]} · {m.barcode.slice(-6)}
-                  </button>
-                ))}
+              <div>
+                <label htmlFor="barcode-lookup-input" className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
+                  Barcode or Batch Number
+                </label>
+                <input
+                  id="barcode-lookup-input"
+                  type="text"
+                  autoFocus
+                  value={barcodeInput}
+                  onChange={(e) => setBarcodeInput(e.target.value)}
+                  placeholder="e.g. 8906000410650 or DL2608A"
+                  className="w-full px-3.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-mono-num text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-600"
+                />
+              </div>
+
+              {barcodeInput.trim() && (
+                <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60">
+                  {barcodeMatch ? (
+                    <div className="space-y-2.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                            {barcodeMatch.name}
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                            {barcodeMatch.genericName} · {barcodeMatch.rackLocation || 'Main Shelf'}
+                          </p>
+                        </div>
+                        <span className="font-mono-num text-sm font-bold text-emerald-700 dark:text-emerald-400 shrink-0">
+                          {getMedicineSellableStock(barcodeMatch)} sellable
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBarcodeOpen(false);
+                          onNavigate('medicine_detail', barcodeMatch.id);
+                        }}
+                        className="w-full rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold transition-colors"
+                      >
+                        Open Medicine Details
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-amber-700 dark:text-amber-400 flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 shrink-0" />
+                      <span className="break-words">No medicine found for "{barcodeInput}".</span>
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                  Quick test barcodes from your shelf:
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {state.medicines.slice(0, 4).map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setBarcodeInput(m.barcode)}
+                      className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-mono-num text-slate-700 dark:text-slate-200"
+                    >
+                      {m.name.split(' ')[0]} · {m.barcode.slice(-6)}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-
-            {barcodeInput.trim() && (
-              <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60">
-                {barcodeMatch ? (
-                  <div className="space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-bold text-slate-900 dark:text-white">
-                          {barcodeMatch.name}
-                        </p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                          {barcodeMatch.genericName} · {barcodeMatch.rackLocation || 'Main Shelf'}
-                        </p>
-                      </div>
-                      <span className="font-mono-num text-sm font-bold text-emerald-700 dark:text-emerald-400">
-                        {getMedicineSellableStock(barcodeMatch)} sellable
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setBarcodeOpen(false);
-                        onNavigate('medicine_detail', barcodeMatch.id);
-                      }}
-                      className="w-full h-10 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold transition-colors"
-                    >
-                      Open Medicine Details
-                    </button>
-                  </div>
-                ) : (
-                  <p className="text-sm text-amber-700 dark:text-amber-400 flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 shrink-0" />
-                    No medicine found for "{barcodeInput}".
-                  </p>
-                )}
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -727,12 +745,15 @@ export function AppShell({
       {/* WhatsApp Share Modal (avoids window.open while supporting direct WhatsApp deep link + clipboard copy) */}
       {whatsappModal && (
         <div
-          className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) onCloseWhatsapp();
+          }}
+          className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-xs flex items-start sm:items-center justify-center p-2 sm:p-4 pt-safe pb-safe pl-safe pr-safe"
           role="dialog"
           aria-modal="true"
           aria-label="Share on WhatsApp"
         >
-          <div className="w-full max-w-lg max-h-[90dvh] overflow-y-auto bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-5 sm:p-6 space-y-4">
+          <div className="w-full max-w-lg max-h-[calc(100dvh-1rem-var(--safe-top)-var(--safe-bottom))] sm:max-h-[88dvh] overflow-y-auto bg-white dark:bg-[#111B1E] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-4 sm:p-6 space-y-4">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2.5 min-w-0">
                 <Share2 className="w-5 h-5 text-emerald-600 shrink-0" />
@@ -744,7 +765,7 @@ export function AppShell({
                 type="button"
                 onClick={onCloseWhatsapp}
                 aria-label="Close WhatsApp share dialog"
-                className="min-h-[40px] min-w-[40px] rounded-xl flex items-center justify-center text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0"
+                className="rounded-xl flex items-center justify-center text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>

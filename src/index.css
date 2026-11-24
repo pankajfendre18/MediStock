@@ -21,6 +21,14 @@
     min-height: 100dvh;
   }
 
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .grid > * {
+    min-width: 0;
+  }
+
   h1, h2, h3, h4, .font-display {
     font-family: var(--font-display);
   }

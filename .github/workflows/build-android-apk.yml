@@ -144,12 +144,17 @@ jobs:
           if (!xml.includes('android:windowSoftInputMode')) {
             xml = xml.replace(
               '<activity',
-              '<activity\n            android:windowSoftInputMode="adjustResize"'
+              '<activity\n            android:windowSoftInputMode="adjustNothing"'
+            );
+          } else {
+            xml = xml.replace(
+              /android:windowSoftInputMode="[^"]*"/,
+              'android:windowSoftInputMode="adjustNothing"'
             );
           }
           fs.writeFileSync(manifestPath, xml);
 
-          // 2. Patch MainActivity.java to enforce exact Android 15/16 WindowInsets (status bar + display cutout / Atomic Island + gesture bar + IME keyboard)
+          // 2. Patch MainActivity.java to enforce exact Android 15/16 WindowInsets (status bar + display cutout / Atomic Island + gesture bar + IME keyboard without double-shrinking)
           const mainActivityPath = path.join(
             'android',
             'app',
@@ -187,6 +192,14 @@ jobs:
                   super.onCreate(savedInstanceState);
 
                   WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                      // Use WindowInsetsCompat.Type.ime() as the single source of truth for keyboard height
+                      // so OEMs like iQOO OriginOS never double-shrink the WebView with adjustResize + IME padding.
+                      getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
+                  } else {
+                      getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+                  }
+
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                       WindowManager.LayoutParams lp = getWindow().getAttributes();
                       lp.layoutInDisplayCutoutMode =
@@ -202,11 +215,12 @@ jobs:
 
                   if (rootContentView != null) {
                       ViewCompat.setOnApplyWindowInsetsListener(rootContentView, (view, windowInsets) -> {
-                          Insets bars = windowInsets.getInsets(
-                              WindowInsetsCompat.Type.systemBars()
-                                  | WindowInsetsCompat.Type.displayCutout()
-                                  | WindowInsetsCompat.Type.ime()
-                          );
+                          int insetTypes = WindowInsetsCompat.Type.systemBars()
+                              | WindowInsetsCompat.Type.displayCutout();
+                          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                              insetTypes |= WindowInsetsCompat.Type.ime();
+                          }
+                          Insets bars = windowInsets.getInsets(insetTypes);
                           view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
                           return WindowInsetsCompat.CONSUMED;
                       });
